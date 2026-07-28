@@ -13,7 +13,7 @@ def load_data():
     # 1. Leer el archivo liviano
     df = pd.read_parquet("datos_bioexplora_light.parquet")
     
-    # 2. Convertir TODAS las columnas a objetos estándar para eliminar la restricción 'category'
+    # 2. Convertir columnas a objetos estándar para evitar problemas con 'category'
     for col in df.columns:
         if isinstance(df[col].dtype, pd.CategoricalDtype):
             df[col] = df[col].astype(str)
@@ -77,15 +77,33 @@ try:
     tab1, tab2, tab3 = st.tabs(["📌 Mapa Geográfico", "📊 Estadísticas", "🔍 Buscador de Especies"])
     
     with tab1:
-        st.subheader("Filtro por Región")
-        regiones = ["Todas"] + sorted([r for r in df['Region'].unique() if r not in ['Sin Información']])
-        selected_region = st.selectbox("Seleccione Región:", regiones)
+        st.subheader("Filtros del Mapa")
+        col_reg, col_est = st.columns(2)
         
+        with col_reg:
+            regiones = ["Todas"] + sorted([r for r in df['Region'].unique() if r not in ['Sin Información']])
+            selected_region = st.selectbox("Seleccione Región:", regiones)
+            
+        with col_est:
+            filtro_identificacion = st.radio(
+                "Estado de Identificación:",
+                ["Todas", "Solo Identificadas", "No Identificadas"],
+                horizontal=True
+            )
+        
+        # Filtrado de coordenadas válidas
         df_map = df.dropna(subset=['Latitud', 'Longitud'])
         df_map = df_map[(df_map['Latitud'] < 0) & (df_map['Longitud'] < 0)]
         
+        # Aplicar filtro regional
         if selected_region != "Todas":
             df_map = df_map[df_map['Region'] == selected_region]
+            
+        # Aplicar filtro de identificación de especie
+        if filtro_identificacion == "Solo Identificadas":
+            df_map = df_map[df_map['NombreComun'] != 'Especie No Especificada']
+        elif filtro_identificacion == "No Identificadas":
+            df_map = df_map[df_map['NombreComun'] == 'Especie No Especificada']
             
         st.info(f"Registros georreferenciados en vista: {len(df_map):,}")
         
@@ -102,6 +120,8 @@ try:
             )
             fig.update_geos(center=dict(lat=-35.0, lon=-71.0), projection_scale=3.8, showland=True, landcolor="rgb(240, 240, 240)")
             st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No hay registros que coincidan con los filtros seleccionados.")
             
     with tab2:
         st.subheader("Métricas Generales")
@@ -121,7 +141,7 @@ try:
             
     with tab3:
         st.subheader("Ficha de Especie")
-        especie_input = st.text_input("Buscar Especie (ej. Guanaco, Pudú, Zorro, Quisco):", "Guanaco")
+        especie_input = st.text_input("Buscar Especie (ej. Guanaco, Pudú, Zorro, Quisco, Lagartija):", "Lagartija")
         
         if especie_input:
             df_esp = df[df['NombreComun'].str.contains(especie_input, case=False, na=False)]
