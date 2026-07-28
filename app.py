@@ -21,16 +21,29 @@ COORDENADAS_COMUNAS = {
     "Maipú": (-33.5112, -70.7580), "Melipilla": (-33.6853, -71.2144), "Rancagua": (-34.1701, -70.7444),
     "San Fernando": (-34.5839, -70.9888), "Curicó": (-34.9828, -71.2394), "Talca": (-35.4264, -71.6554),
     "Linares": (-35.8454, -71.5979), "Cauquenes": (-35.9670, -72.3158), "Chillán": (-36.6063, -72.1023),
-    "San Carlos": (-36.4242, -71.9581), "Concepción": (-36.8270, -73.0503), "Los Ángeles": (-37.4697, -72.3537),
-    "Chillan": (-36.6063, -72.1023), "San Pedro De La Paz": (-36.8406, -73.1022), "Talcahuano": (-36.7167, -73.1167),
-    "Temuco": (-38.7359, -72.5904), "Villarrica": (-39.2822, -72.2272), "Angol": (-37.7944, -72.7164),
-    "Valdivia": (-39.8142, -73.2459), "Osorno": (-40.5739, -73.1336), "Puerto Montt": (-41.4689, -72.9411),
-    "Puerto Varas": (-41.3195, -72.9854), "Castro": (-42.4721, -73.7732), "Ancud": (-41.8686, -73.8267),
-    "Coyhaique": (-45.5752, -72.0662), "Puerto Aysén": (-45.4058, -72.6936), "Punta Arenas": (-53.1638, -70.9171),
-    "Natales": (-51.7269, -72.5062), "Puerto Natales": (-51.7269, -72.5062), "Porvenir": (-53.2954, -70.3668)
+    "San Carlos": (-36.4242, -71.9581), "Concepción": (-36.8270, -73.0503), "Hualpén": (-36.7925, -73.1118),
+    "Hualpen": (-36.7925, -73.1118), "Talcahuano": (-36.7167, -73.1167), "San Pedro De La Paz": (-36.8406, -73.1022),
+    "Los Ángeles": (-37.4697, -72.3537), "Temuco": (-38.7359, -72.5904), "Villarrica": (-39.2822, -72.2272),
+    "Angol": (-37.7944, -72.7164), "Valdivia": (-39.8142, -73.2459), "Osorno": (-40.5739, -73.1336),
+    "San Pablo": (-40.4042, -73.0308), "Puerto Montt": (-41.4689, -72.9411), "Puerto Varas": (-41.3195, -72.9854),
+    "Castro": (-42.4721, -73.7732), "Ancud": (-41.8686, -73.8267), "Coyhaique": (-45.5752, -72.0662),
+    "Puerto Aysén": (-45.4058, -72.6936), "Punta Arenas": (-53.1638, -70.9171), "Natales": (-51.7269, -72.5062),
+    "Puerto Natales": (-51.7269, -72.5062), "Porvenir": (-53.2954, -70.3668)
 }
 
-# MAPEO EXTENDIDO DE NOMBRES COMUNES A CIENTÍFICOS PARA GBIF / iNATURALIST
+COORDENADAS_REGIONES = {
+    "Arica Y Parinacota": (-18.4783, -70.3126), "Tarapacá": (-20.2133, -70.1503),
+    "Antofagasta": (-23.6509, -70.3975), "Atacama": (-27.3668, -70.3323),
+    "Coquimbo": (-29.9027, -71.2520), "Valparaíso": (-33.0472, -71.6127),
+    "Metropolitana": (-33.4489, -70.6693), "Región Metropolitana De Santiago": (-33.4489, -70.6693),
+    "O'Higgins": (-34.1701, -70.7444), "Maule": (-35.4264, -71.6554),
+    "Ñuble": (-36.6063, -72.1023), "Biobío": (-36.8270, -73.0503), "Biobio": (-36.8270, -73.0503),
+    "Araucanía": (-38.7359, -72.5904), "La Araucanía": (-38.7359, -72.5904),
+    "Los Ríos": (-39.8142, -73.2459), "Los Rios": (-39.8142, -73.2459),
+    "Los Lagos": (-41.4689, -72.9411), "Aysén": (-45.5752, -72.0662), "Aysen": (-45.5752, -72.0662),
+    "Magallanes": (-53.1638, -70.9171), "Magallanes Y De La Antártica Chilena": (-53.1638, -70.9171)
+}
+
 MAPEO_NOMBRES_CIENTIFICOS = {
     # Anfibios
     "ranita de antifaz": "Batrachyla taeniata",
@@ -91,7 +104,6 @@ MAPEO_NOMBRES_CIENTIFICOS = {
 }
 
 def obtener_nombre_cientifico_resuelto(nombre_ingresado):
-    """Mapea el nombre común ingresado a su nombre científico exacto para las API."""
     if not nombre_ingresado:
         return nombre_ingresado
     limpio = str(nombre_ingresado).strip().lower()
@@ -125,17 +137,22 @@ def load_data():
     df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
     df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
 
+    # Asignación inteligente con Fallback (Comuna -> Región)
     def obtener_lat(row):
         lat = row['Latitud']
         if pd.notnull(lat) and lat != 0:
             return -abs(lat) if abs(lat) > 10 else lat
-        return COORDENADAS_COMUNAS.get(row['Comuna'], (None, None))[0]
+        if row['Comuna'] in COORDENADAS_COMUNAS:
+            return COORDENADAS_COMUNAS[row['Comuna']][0]
+        return COORDENADAS_REGIONES.get(row['Region'], (None, None))[0]
 
     def obtener_lon(row):
         lon = row['Longitud']
         if pd.notnull(lon) and lon != 0:
             return -abs(lon) if abs(lon) > 10 else lon
-        return COORDENADAS_COMUNAS.get(row['Comuna'], (None, None))[1]
+        if row['Comuna'] in COORDENADAS_COMUNAS:
+            return COORDENADAS_COMUNAS[row['Comuna']][1]
+        return COORDENADAS_REGIONES.get(row['Region'], (None, None))[1]
 
     df['Latitud'] = df.apply(obtener_lat, axis=1)
     df['Longitud'] = df.apply(obtener_lon, axis=1)
@@ -144,7 +161,6 @@ def load_data():
 
 @st.cache_data(ttl=3600)
 def obtener_datos_gbif(nombre_especie):
-    """Obtiene la taxonomía de GBIF y busca la imagen en GBIF/iNaturalist."""
     nombre_query = obtener_nombre_cientifico_resuelto(nombre_especie)
     url = f"https://api.gbif.org/v1/species/match?name={nombre_query}"
     
@@ -153,13 +169,11 @@ def obtener_datos_gbif(nombre_especie):
     usage_key = None
     
     try:
-        # 1. Obtener Jerarquía Taxonómica de GBIF
         res = requests.get(url, timeout=4)
         if res.status_code == 200:
             data = res.json()
             usage_key = data.get('usageKey')
             
-            # Si GBIF dio match aceptable
             if data.get("matchType") != "NONE":
                 taxonomia = {
                     "Reino": data.get("kingdom", "Desconocido"),
@@ -171,7 +185,6 @@ def obtener_datos_gbif(nombre_especie):
                     "Nombre Científico": data.get("scientificName", nombre_query)
                 }
             
-            # Intento A: Búsqueda de fotos en registros de GBIF
             if usage_key:
                 occ_url = f"https://api.gbif.org/v1/occurrence/search?taxonKey={usage_key}&mediaType=StillImage&limit=1"
                 occ_res = requests.get(occ_url, timeout=4)
@@ -183,7 +196,6 @@ def obtener_datos_gbif(nombre_especie):
                                 imagen_url = m['identifier']
                                 break
 
-        # Intento B: Consultar iNaturalist para foto o fallback taxonómico si GBIF falló
         inat_url = f"https://api.inaturalist.org/v1/taxa?q={nombre_query}&per_page=1"
         inat_res = requests.get(inat_url, timeout=4)
         if inat_res.status_code == 200:
@@ -191,13 +203,11 @@ def obtener_datos_gbif(nombre_especie):
             if inat_data:
                 taxon_obj = inat_data[0]
                 
-                # Si GBIF no entregó foto, usar la de iNaturalist
                 if not imagen_url and 'default_photo' in taxon_obj:
                     photo_info = taxon_obj['default_photo']
                     if photo_info and 'medium_url' in photo_info:
                         imagen_url = photo_info['medium_url']
                 
-                # Si GBIF no pudo armas la taxonomía, usar datos taxonómicos de iNaturalist
                 if not taxonomia:
                     ancestors = taxon_obj.get('ancestors', [])
                     tax_map = {a.get('rank'): a.get('name') for a in ancestors}
@@ -205,7 +215,7 @@ def obtener_datos_gbif(nombre_especie):
                     
                     taxonomia = {
                         "Reino": tax_map.get("kingdom", "Animalia"),
-                        "Filo": tax_map.get("phylum", tax_map.get("phylum", "Chordata")),
+                        "Filo": tax_map.get("phylum", "Chordata"),
                         "Clase": tax_map.get("class", "Desconocido"),
                         "Orden": tax_map.get("order", "Desconocido"),
                         "Familia": tax_map.get("family", "Desconocido"),
@@ -344,7 +354,7 @@ try:
         col_search1, col_search2 = st.columns([1, 1])
         
         with col_search1:
-            busqueda = st.text_input("1. Buscar por palabra o fragmento de nombre:", "condor")
+            busqueda = st.text_input("1. Buscar por palabra o fragmento de nombre:", "ranita")
         
         if busqueda.strip():
             df_coincidencias = df[df['NombreComun'].str.contains(busqueda, case=False, na=False)]
