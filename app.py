@@ -13,7 +13,7 @@ def load_data():
     # 1. Leer el archivo liviano
     df = pd.read_parquet("datos_bioexplora_light.parquet")
     
-    # 2. Convertir columnas a objetos estándar para evitar restricciones de 'category'
+    # 2. Convertir columnas a objetos estándar
     for col in df.columns:
         if isinstance(df[col].dtype, pd.CategoricalDtype):
             df[col] = df[col].astype(str)
@@ -76,16 +76,9 @@ try:
     
     tab1, tab2, tab3 = st.tabs(["📌 Mapa Geográfico", "📊 Estadísticas", "🔍 Buscador de Especies"])
     
-    # Diccionario de estilos Mapbox libres de token
-    estilos_mapa = {
-        "🗺️ Político / Callejero (OpenStreetMap)": "open-street-map",
-        "🎨 Oscuro (CartoDB Dark Matter)": "carto-darkmatter",
-        "⚪ Claro Minimalista (CartoDB Positron)": "carto-positron"
-    }
-
     with tab1:
-        st.subheader("Filtros y Estilo del Mapa")
-        c_reg, c_est, c_style = st.columns([1, 1, 1])
+        st.subheader("Filtros del Mapa")
+        c_reg, c_est = st.columns(2)
         
         with c_reg:
             regiones = ["Todas"] + sorted([r for r in df['Region'].unique() if r not in ['Sin Información']])
@@ -97,9 +90,6 @@ try:
                 ["Todas", "Solo Identificadas", "No Identificadas"],
                 horizontal=True
             )
-            
-        with c_style:
-            map_theme = st.selectbox("Capa del Mapa:", list(estilos_mapa.keys()))
         
         # Filtrado de coordenadas válidas
         df_map = df.dropna(subset=['Latitud', 'Longitud'])
@@ -118,19 +108,27 @@ try:
         if len(df_map) > 0:
             lat_center = df_map['Latitud'].mean()
             lon_center = df_map['Longitud'].mean()
-            zoom_level = 4 if selected_region == "Todas" else 7
+            scale_val = 12 if selected_region != "Todas" else 3.8
 
-            fig = px.scatter_mapbox(
+            fig = px.scatter_geo(
                 df_map,
                 lat="Latitud",
                 lon="Longitud",
                 color="TipoEvento",
                 hover_name="NombreComun",
                 hover_data={"Region": True, "Comuna": True, "Latitud": ":.4f", "Longitud": ":.4f", "TipoEvento": True},
-                zoom=zoom_level,
-                center=dict(lat=lat_center, lon=lon_center),
-                mapbox_style=estilos_mapa[map_theme],
+                scope="south america",
                 height=650
+            )
+            fig.update_geos(
+                center=dict(lat=lat_center, lon=lon_center),
+                projection_scale=scale_val,
+                showland=True,
+                landcolor="rgb(245, 245, 245)",
+                showcountries=True,
+                countrycolor="rgb(180, 180, 180)",
+                showsubunits=True,
+                subunitcolor="rgb(200, 200, 200)"
             )
             fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
             st.plotly_chart(fig, use_container_width=True)
@@ -170,17 +168,21 @@ try:
                     df_esp_geo = df_esp.dropna(subset=['Latitud', 'Longitud'])
                     df_esp_geo = df_esp_geo[(df_esp_geo['Latitud'] < 0) & (df_esp_geo['Longitud'] < 0)]
                     if len(df_esp_geo) > 0:
-                        fig_esp = px.scatter_mapbox(
+                        fig_esp = px.scatter_geo(
                             df_esp_geo,
                             lat="Latitud",
                             lon="Longitud",
                             color="TipoEvento",
                             hover_name="NombreComun",
                             hover_data={"Region": True, "Comuna": True, "TipoEvento": True},
-                            zoom=4,
-                            center=dict(lat=df_esp_geo['Latitud'].mean(), lon=df_esp_geo['Longitud'].mean()),
-                            mapbox_style="open-street-map",
+                            scope="south america",
                             height=500
+                        )
+                        fig_esp.update_geos(
+                            center=dict(lat=df_esp_geo['Latitud'].mean(), lon=df_esp_geo['Longitud'].mean()),
+                            projection_scale=4.5,
+                            showland=True,
+                            landcolor="rgb(245, 245, 245)"
                         )
                         fig_esp.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
                         st.plotly_chart(fig_esp, use_container_width=True)
