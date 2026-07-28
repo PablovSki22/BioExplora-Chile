@@ -31,11 +31,14 @@ COORDENADAS_COMUNAS = {
 
 @st.cache_data
 def load_data():
-    df = pd.read_parquet("datos_bioexplora_light.parquet")
+    df_raw = pd.read_parquet("datos_bioexplora_light.parquet")
     
-    # Normalizar nombres de columnas
-    df.columns = [str(c).strip().lower() for c in df.columns]
-    
+    # 1. Copiar y forzar conversión de absolutamente TODAS las columnas a objetos/strings simples
+    # Esto elimina de raíz cualquier tipo Categorical proveniente del archivo parquet original.
+    df = pd.DataFrame()
+    for col in df_raw.columns:
+        df[str(col).strip().lower()] = df_raw[col].astype(str)
+
     region_col = next((c for c in df.columns if 'region' in c), None)
     comuna_col = next((c for c in df.columns if 'comuna' in c), None)
     nombre_col = next((c for c in df.columns if 'nombre' in c or 'especie' in c or 'taxa' in c), None)
@@ -43,35 +46,38 @@ def load_data():
     lon_col = next((c for c in df.columns if any(term in c for term in ['lon', 'lng', 'x_coord', 'x'])), None)
     origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
 
-    df['Region'] = df[region_col].fillna("Sin Información").astype(str).str.strip().str.title() if region_col else "Sin Información"
-    df['Comuna'] = df[comuna_col].fillna("Sin Información").astype(str).str.strip().str.title() if comuna_col else "Sin Información"
-    df['NombreComun'] = df[nombre_col].fillna("Especie No Especificada").astype(str).str.strip().str.title() if nombre_col else "Especie No Especificada"
-    df['TipoEvento'] = df[origen_col].fillna("Registro").astype(str).str.strip() if origen_col else "Registro"
+    # 2. Asignación limpia de columnas principales
+    df['Region'] = df[region_col].str.strip().str.title() if region_col else "Sin Información"
+    df['Comuna'] = df[comuna_col].str.strip().str.title() if comuna_col else "Sin Información"
+    df['NombreComun'] = df[nombre_col].str.strip().str.title() if nombre_col else "Especie No Especificada"
+    df['TipoEvento'] = df[origen_col].str.strip() if origen_col else "Registro"
 
-    invalid_names = ['Nan', 'None', '', 'Null', 'Sin Informacion', 'Sin Información', '<Na>']
-    df['NombreComun'] = df['NombreComun'].replace(invalid_names, 'Especie No Especificada')
-    df['Region'] = df['Region'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Sin Información')
-    df['Comuna'] = df['Comuna'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Sin Información')
+    # Reemplazar valores nulos/vacíos representados en string
+    invalid_values = ['nan', 'none', '', 'null', 'sin informacion', 'sin información', '<na>']
     
-    # Conversión numérica de coordenadas
+    df['NombreComun'] = df['NombreComun'].apply(lambda x: 'Especie No Especificada' if str(x).lower() in invalid_values else x)
+    df['Region'] = df['Region'].apply(lambda x: 'Sin Información' if str(x).lower() in invalid_values else x)
+    df['Comuna'] = df['Comuna'].apply(lambda x: 'Sin Información' if str(x).lower() in invalid_values else x)
+
+    # 3. Conversión numérica de coordenadas
     df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
     df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
-    
-    # Rellenar coordenadas faltantes usando la Comuna (Fallback Geográfico)
-    def asignar_lat(row):
-        if pd.notnull(row['Latitud']) and row['Latitud'] != 0:
-            return -abs(row['Latitud']) if abs(row['Latitud']) > 10 else row['Latitud']
-        comuna = row['Comuna']
-        return COORDENADAS_COMUNAS.get(comuna, (None, None))[0]
 
-    def asignar_lon(row):
-        if pd.notnull(row['Longitud']) and row['Longitud'] != 0:
-            return -abs(row['Longitud']) if abs(row['Longitud']) > 10 else row['Longitud']
-        comuna = row['Comuna']
-        return COORDENADAS_COMUNAS.get(comuna, (None, None))[1]
+    # 4. Asignar coordenadas de respaldo (fallback por comuna) si faltan
+    def obtener_lat(row):
+        lat = row['Latitud']
+        if pd.notnull(lat) and lat != 0:
+            return -abs(lat) if abs(lat) > 10 else lat
+        return COORDENADAS_COMUNAS.get(row['Comuna'], (None, None))[0]
 
-    df['Latitud'] = df.apply(asignar_lat, axis=1)
-    df['Longitud'] = df.apply(asignar_lon, axis=1)
+    def obtener_lon(row):
+        lon = row['Longitud']
+        if pd.notnull(lon) and lon != 0:
+            return -abs(lon) if abs(lon) > 10 else lon
+        return COORDENADAS_COMUNAS.get(row['Comuna'], (None, None))[1]
+
+    df['Latitud'] = df.apply(obtener_lat, axis=1)
+    df['Longitud'] = df.apply(obtener_lon, axis=1)
 
     return df
 
@@ -154,7 +160,7 @@ try:
         else:
             st.warning("No hay registros que coincidan con los filtros seleccionados.")
             
-    # TAB 2: ESTADÍSTICAS Y GRÁFICOS
+    # TAB 2: ESTADÍSTICAS
     with tab2:
         st.subheader("Métricas Generales")
         col1, col2, col3 = st.columns(3)
@@ -201,7 +207,7 @@ try:
                 fig_com.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
                 st.plotly_chart(fig_com, use_container_width=True)
 
-    # TAB 3: BUSCADOR CON GARANTÍA DE MAPA
+    # TAB 3: BUSCADOR
     with tab3:
         st.subheader("Buscador y Ficha de Especie")
         
@@ -254,7 +260,7 @@ try:
                         mapa_esp = crear_mapa_folium(df_esp_geo, lat_c, lon_c, zoom_dinamico)
                         st_folium(mapa_esp, use_container_width=True, height=450, returned_objects=[])
                     else:
-                        st.warning("No fue posible ubicar geográficamente esta comuna.")
+                        st.warning("No fue posible ubicar geográficamente este registro.")
 
                 st.markdown("---")
                 st.markdown("#### Detalle de Registros Encontrados")
