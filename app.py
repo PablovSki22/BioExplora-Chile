@@ -14,6 +14,67 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- ESTILOS CSS PERSONALIZADOS (DISEÑO NO PLANO / MODERN UI) ---
+st.markdown("""
+<style>
+    /* Estilo general y tipografía suave */
+    .stApp {
+        background-color: #f8fafc;
+    }
+    
+    /* Contenedores y Tarjetas con sombra y bordes redondeados (Efecto Elevado) */
+    div.stMarkdown, div.stForm, div.stTabs {
+        border-radius: 12px;
+    }
+    
+    /* Botones principales con degradado y sombra */
+    div.stButton > button {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-weight: 600;
+        box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2), 0 2px 4px -1px rgba(16, 185, 129, 0.1);
+        transition: all 0.3s ease;
+    }
+    
+    div.stButton > button:hover {
+        background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.3);
+        transform: translateY(-2px);
+    }
+    
+    /* Tarjetas de Métricas con relieve */
+    div[data-testid="stMetric"] {
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        border: 1px solid #e2e8f0;
+    }
+    
+    /* Cajas de Alerta / Info con bordes redondeados y sombras */
+    div.stAlert {
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+    
+    /* Inputs y Selectbox con bordes estilizados */
+    div.stTextInput > div > div > input, div.stSelectbox > div > div > div {
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
+    }
+    
+    /* Sidebar con diseño diferenciado */
+    section[data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #e2e8f0;
+        box-shadow: 4px 0 10px rgba(0,0,0,0.02);
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- VERIFICACIÓN Y CONTROL DE SESIÓN GOOGLE NATIVA ---
 user_obj = getattr(st, "user", getattr(st, "experimental_user", None))
 is_logged_in_google = False
@@ -311,7 +372,6 @@ def crear_mapa_contraste_especie(df_completo, df_especie):
     folium.TileLayer('CartoDB positron', name='Claro Minimalista').add_to(m)
     folium.TileLayer('CartoDB dark_matter', name='Oscuro').add_to(m)
 
-    # Capa de contraste: Todos los demás registros (gris tenue)
     df_otros = df_completo[~df_completo.index.isin(df_especie.index)].dropna(subset=['Latitud', 'Longitud'])
     for _, row in df_otros.iterrows():
         folium.CircleMarker(
@@ -324,7 +384,6 @@ def crear_mapa_contraste_especie(df_completo, df_especie):
             tooltip=f"Otro registro: {row['NombreComun']}"
         ).add_to(m)
 
-    # Capa principal: Avistamientos de la especie seleccionada (destacados en rojo/naranja brillante)
     for _, row in df_especie.dropna(subset=['Latitud', 'Longitud']).iterrows():
         popup_txt = f"<b>Especie:</b> {row['NombreComun']}<br><b>Región:</b> {row['Region']}<br><b>Comuna:</b> {row['Comuna']}"
         folium.CircleMarker(
@@ -727,7 +786,6 @@ def mostrar_aplicacion_principal():
                                     btn_descartar = st.form_submit_button("🗑️ Descartar Registro", use_container_width=True)
                                 
                                 if btn_publicar:
-                                    # Mover a registros oficiales
                                     comuna_limpia = rev_comuna.strip().title()
                                     lat_f = COORDENADAS_COMUNAS.get(comuna_limpia, (row['Latitud'], row['Longitud']))[0]
                                     lon_f = COORDENADAS_COMUNAS.get(comuna_limpia, (row['Latitud'], row['Longitud']))[1]
