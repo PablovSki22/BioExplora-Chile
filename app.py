@@ -51,6 +51,9 @@ if "conteo_avistamientos" not in st.session_state:
         "admin@bioexplora.cl": 12
     }
 
+if "df_pendientes_revision" not in st.session_state:
+    st.session_state.df_pendientes_revision = pd.DataFrame(columns=['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud', 'AportadoPor', 'Notas', 'Estado'])
+
 # Si Google confirmó login
 if is_logged_in_google:
     st.session_state.autenticado = True
@@ -299,6 +302,45 @@ def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
     folium.LayerControl(position='topright').add_to(m)
     return m
 
+def crear_mapa_contraste_especie(df_completo, df_especie):
+    lat_c = df_especie['Latitud'].mean() if not df_especie.empty else -33.4489
+    lon_c = df_especie['Longitud'].mean() if not df_especie.empty else -70.6693
+    zoom = 6 if not df_especie.empty else 4
+
+    m = folium.Map(location=[lat_c, lon_c], zoom_start=zoom, tiles="OpenStreetMap")
+    folium.TileLayer('CartoDB positron', name='Claro Minimalista').add_to(m)
+    folium.TileLayer('CartoDB dark_matter', name='Oscuro').add_to(m)
+
+    # Capa de contraste: Todos los demás registros (gris tenue)
+    df_otros = df_completo[~df_completo.index.isin(df_especie.index)].dropna(subset=['Latitud', 'Longitud'])
+    for _, row in df_otros.iterrows():
+        folium.CircleMarker(
+            location=[row['Latitud'], row['Longitud']],
+            radius=3,
+            color='gray',
+            fill=True,
+            fill_color='gray',
+            fill_opacity=0.25,
+            tooltip=f"Otro registro: {row['NombreComun']}"
+        ).add_to(m)
+
+    # Capa principal: Avistamientos de la especie seleccionada (destacados en rojo/naranja brillante)
+    for _, row in df_especie.dropna(subset=['Latitud', 'Longitud']).iterrows():
+        popup_txt = f"<b>Especie:</b> {row['NombreComun']}<br><b>Región:</b> {row['Region']}<br><b>Comuna:</b> {row['Comuna']}"
+        folium.CircleMarker(
+            location=[row['Latitud'], row['Longitud']],
+            radius=8,
+            color='crimson',
+            fill=True,
+            fill_color='crimson',
+            fill_opacity=0.9,
+            popup=folium.Popup(popup_txt, max_width=300),
+            tooltip=f"¡{row['NombreComun']} aquí! ({row['Comuna']})"
+        ).add_to(m)
+
+    folium.LayerControl(position='topright').add_to(m)
+    return m
+
 # --- PANTALLA DE AUTENTICACIÓN ---
 def mostrar_pantalla_login():
     st.markdown("<h1 style='text-align: center;'>🌿 BioExplora Chile</h1>", unsafe_allow_html=True)
@@ -378,7 +420,6 @@ def mostrar_aplicacion_principal():
     })
 
     with st.sidebar:
-        # Mostrar foto de perfil en miniatura si existe
         if perfil_actual.get('avatar') is not None:
             st.image(perfil_actual.get('avatar'), width=80)
         
@@ -550,13 +591,19 @@ def mostrar_aplicacion_principal():
                         else:
                             st.write("Sin datos taxonómicos externos.")
 
+                    st.markdown("---")
+                    st.markdown("### 🗺️ Mapa de Contraste: Distribución de la Especie vs. Resto de Registros")
+                    st.info("🔴 Puntos rojos: Avistamientos de esta especie. ⚫ Puntos grises: Resto de registros en Chile.")
+                    mapa_especie = crear_mapa_contraste_especie(df, df_esp)
+                    st_folium(mapa_especie, use_container_width=True, height=500, returned_objects=[])
+
         with tab4:
             st.subheader("📝 Registrar un Nuevo Avistamiento de Biodiversidad")
             
             if st.session_state.tipo_acceso == "Invitado":
                 st.warning("🔒 Los invitados están en modo sólo lectura. Para ingresar datos y subir de nivel, por favor cierra sesión e inicia sesión con una cuenta de usuario.")
             else:
-                st.markdown("Sube una foto del avistamiento (**con GPS activado en tu cámara**) o indica la comuna. Las coordenadas se extraerán automáticamente de la imagen si están disponibles.")
+                st.markdown("Sube una foto del avistamiento (**con GPS activado en tu cámara**) o indica la comuna. El registro pasará primero por una **fase de revisión y clasificación** en tu perfil.")
                 
                 with st.form("form_avistamiento"):
                     col_f1, col_f2 = st.columns(2)
@@ -571,7 +618,7 @@ def mostrar_aplicacion_principal():
                         foto_avistamiento = st.file_uploader("📷 Subir Fotografía (Extrae GPS automático)", type=["jpg", "jpeg", "png"])
                         input_notas = st.text_area("Notas / Observaciones de campo:", placeholder="Ej: Observado cerca de estero al atardecer.")
                     
-                    btn_guardar = st.form_submit_button("🚀 Publicar Avistamiento", type="primary", use_container_width=True)
+                    btn_guardar = st.form_submit_button("📥 Enviar a Revisión", type="primary", use_container_width=True)
                     
                     if btn_guardar:
                         if not input_especie.strip() or not input_comuna.strip():
@@ -586,28 +633,24 @@ def mostrar_aplicacion_principal():
 
                             if lat_exif and lon_exif:
                                 lat_final, lon_final = lat_exif, lon_exif
-                                st.success("📍 ¡Ubicación GPS extraída exitosamente de la fotografía!")
                             else:
                                 lat_final = COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[0]
                                 lon_final = COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[1]
-                                if foto_avistamiento is not None:
-                                    st.info("ℹ️ La foto no contenía datos GPS; se usaron las coordenadas referenciales de la comuna.")
                             
-                            nuevo_registro = pd.DataFrame([{
+                            nuevo_pendiente = pd.DataFrame([{
                                 'Region': input_region,
                                 'Comuna': comuna_limpia,
                                 'NombreComun': nom_especie_limpio,
                                 'TipoEvento': 'Aporte Comunitario',
                                 'Latitud': lat_final,
                                 'Longitud': lon_final,
-                                'AportadoPor': usr_actual
+                                'AportadoPor': usr_actual,
+                                'Notas': input_notas,
+                                'Estado': 'Pendiente de Revisión'
                             }])
                             
-                            st.session_state.df_nuevos_registros = pd.concat([st.session_state.df_nuevos_registros, nuevo_registro], ignore_index=True)
-                            st.session_state.conteo_avistamientos[usr_actual] = st.session_state.conteo_avistamientos.get(usr_actual, 0) + 1
-                            
-                            st.balloons()
-                            st.success(f"¡Avistamiento registrado con éxito! Tu nuevo total de aportes es {st.session_state.conteo_avistamientos[usr_actual]}.")
+                            st.session_state.df_pendientes_revision = pd.concat([st.session_state.df_pendientes_revision, nuevo_pendiente], ignore_index=True)
+                            st.success("📝 ¡Avistamiento guardado en fase de revisión! Ve a tu sección **Mi Perfil** para validarlo y publicarlo.")
 
         if tab_perfil and st.session_state.tipo_acceso == "Registrado":
             with tab_perfil:
@@ -661,15 +704,68 @@ def mostrar_aplicacion_principal():
                             st.rerun()
 
                 st.markdown("---")
-                st.markdown("### 📋 Tus Avistamientos Realizados")
+                st.markdown("### 📥 Bandeja de Revisión y Clasificación de Avistamientos")
+                st.write("Clasifica o ajusta tus registros pendientes antes de publicarlos oficialmente en el mapa general del portal.")
+                
+                mis_pendientes = st.session_state.df_pendientes_revision[
+                    (st.session_state.df_pendientes_revision['AportadoPor'] == usr_actual) & 
+                    (st.session_state.df_pendientes_revision['Estado'] == 'Pendiente de Revisión')
+                ]
+                
+                if not mis_pendientes.empty:
+                    for idx, row in mis_pendientes.iterrows():
+                        with st.expander(f"🔍 Revisar: {row['NombreComun']} ({row['Comuna']}, {row['Region']})"):
+                            with st.form(f"form_revision_{idx}"):
+                                rev_especie = st.text_input("Confirmar / Corregir Especie:", value=row['NombreComun'], key=f"rev_esp_{idx}")
+                                rev_comuna = st.text_input("Confirmar / Corregir Comuna:", value=row['Comuna'], key=f"rev_com_{idx}")
+                                rev_notas = st.text_area("Notas de campo:", value=row['Notas'], key=f"rev_not_{idx}")
+                                
+                                c_btn1, c_btn2 = st.columns(2)
+                                with c_btn1:
+                                    btn_publicar = st.form_submit_button("🚀 Validar y Publicar Oficialmente", type="primary", use_container_width=True)
+                                with c_btn2:
+                                    btn_descartar = st.form_submit_button("🗑️ Descartar Registro", use_container_width=True)
+                                
+                                if btn_publicar:
+                                    # Mover a registros oficiales
+                                    comuna_limpia = rev_comuna.strip().title()
+                                    lat_f = COORDENADAS_COMUNAS.get(comuna_limpia, (row['Latitud'], row['Longitud']))[0]
+                                    lon_f = COORDENADAS_COMUNAS.get(comuna_limpia, (row['Latitud'], row['Longitud']))[1]
+
+                                    reg_oficial = pd.DataFrame([{
+                                        'Region': row['Region'],
+                                        'Comuna': comuna_limpia,
+                                        'NombreComun': rev_especie.strip().title(),
+                                        'TipoEvento': 'Aporte Comunitario',
+                                        'Latitud': lat_f,
+                                        'Longitud': lon_f,
+                                        'AportadoPor': usr_actual
+                                    }])
+                                    st.session_state.df_nuevos_registros = pd.concat([st.session_state.df_nuevos_registros, reg_oficial], ignore_index=True)
+                                    st.session_state.df_pendientes_revision.loc[idx, 'Estado'] = 'Publicado'
+                                    st.session_state.conteo_avistamientos[usr_actual] = st.session_state.conteo_avistamientos.get(usr_actual, 0) + 1
+                                    
+                                    st.balloons()
+                                    st.success("¡Registro validado y publicado con éxito en el mapa!")
+                                    st.rerun()
+
+                                if btn_descartar:
+                                    st.session_state.df_pendientes_revision.loc[idx, 'Estado'] = 'Descartado'
+                                    st.warning("El registro ha sido descartado.")
+                                    st.rerun()
+                else:
+                    st.info("No tienes avistamientos pendientes de revisión en este momento.")
+
+                st.markdown("---")
+                st.markdown("### 📋 Tus Avistamientos Publicados Oficialmente")
                 if not st.session_state.df_nuevos_registros.empty and 'AportadoPor' in st.session_state.df_nuevos_registros.columns:
                     mis_aportes = st.session_state.df_nuevos_registros[st.session_state.df_nuevos_registros['AportadoPor'] == usr_actual]
                     if not mis_aportes.empty:
                         st.dataframe(mis_aportes[['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud']], use_container_width=True)
                     else:
-                        st.info("Aún no has registrado aportes comunitarios.")
+                        st.info("Aún no tienes aportes comunitarios publicados.")
                 else:
-                    st.info("Aún no has registrado aportes comunitarios.")
+                    st.info("Aún no tienes aportes comunitarios publicados.")
 
     except Exception as e:
         st.error(f"Error en la aplicación: {e}")
