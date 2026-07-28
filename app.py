@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import folium
+from streamlit_folium import st_folium
 
 st.set_page_config(
     page_title="BioExplora Chile",
@@ -10,20 +11,16 @@ st.set_page_config(
 
 @st.cache_data
 def load_data():
-    # 1. Leer el archivo liviano
     df = pd.read_parquet("datos_bioexplora_light.parquet")
     
-    # 2. Convertir columnas a objetos estándar para evitar problemas con 'category'
     for col in df.columns:
         if isinstance(df[col].dtype, pd.CategoricalDtype):
             df[col] = df[col].astype(str)
         else:
             df[col] = df[col].astype(object)
 
-    # 3. Estandarizar nombres de columnas a minúsculas
     df.columns = [str(c).strip().lower() for c in df.columns]
     
-    # Mapeo dinámico de columnas
     region_col = next((c for c in df.columns if 'region' in c), None)
     comuna_col = next((c for c in df.columns if 'comuna' in c), None)
     nombre_col = next((c for c in df.columns if 'nombre' in c or 'especie' in c or 'taxa' in c), None)
@@ -31,42 +28,73 @@ def load_data():
     lon_col = next((c for c in df.columns if 'lon' in c or 'lng' in c), None)
     origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
 
-    # 4. Limpieza de Región
     if region_col:
         df['Region'] = df[region_col].fillna("Sin Información").astype(str).str.strip().str.title()
     else:
         df['Region'] = "Sin Información"
 
-    # 5. Limpieza de Comuna
     if comuna_col:
         df['Comuna'] = df[comuna_col].fillna("Sin Información").astype(str).str.strip().str.title()
     else:
         df['Comuna'] = "Sin Información"
     
-    # 6. Limpieza de Especie
     if nombre_col:
         df['NombreComun'] = df[nombre_col].fillna("Especie No Especificada").astype(str).str.strip().str.title()
     else:
         df['NombreComun'] = "Especie No Especificada"
 
-    # 7. Limpieza de TipoEvento
     if origen_col:
         df['TipoEvento'] = df[origen_col].fillna("Registro").astype(str).str.strip()
     else:
         df['TipoEvento'] = "Registro"
 
-    # 8. Reemplazo de cadenas nulas residuales
     invalid_names = ['Nan', 'None', '', 'Null', 'Sin Informacion', 'Sin Información', '<Na>']
     df['NombreComun'] = df['NombreComun'].replace(invalid_names, 'Especie No Especificada')
     df['Region'] = df['Region'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Sin Información')
     df['Comuna'] = df['Comuna'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Sin Información')
     df['TipoEvento'] = df['TipoEvento'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Registro')
     
-    # 9. Conversión de coordenadas a numéricas
     df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
     df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
     
     return df
+
+def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
+    # Crear mapa base con OpenStreetMap por defecto
+    m = folium.Map(
+        location=[lat_centro, lon_centro],
+        zoom_start=zoom,
+        tiles="OpenStreetMap"
+    )
+    
+    # Agregar capas base adicionales para alternar en el mapa
+    folium.TileLayer('CartoDB positron', name='Claro Minimalista').add_to(m)
+    folium.TileLayer('CartoDB dark_matter', name='Oscuro').add_to(m)
+    folium.TileLayer(
+        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attr='Esri',
+        name='Satelital / Geográfico'
+    ).add_to(m)
+
+    # Agregar marcadores
+    for _, row in df_puntos.iterrows():
+        color_marker = "green" if row["TipoEvento"] == "Monitoreo" else "orange"
+        popup_txt = f"<b>Especie:</b> {row['NombreComun']}<br><b>Región:</b> {row['Region']}<br><b>Comuna:</b> {row['Comuna']}<br><b>Tipo:</b> {row['TipoEvento']}"
+        
+        folium.CircleMarker(
+            location=[row['Latitud'], row['Longitud']],
+            radius=5,
+            popup=folium.Popup(popup_txt, max_width=300),
+            tooltip=row['NombreComun'],
+            color=color_marker,
+            fill=True,
+            fill_color=color_marker,
+            fill_opacity=0.7
+        ).add_to(m)
+
+    # Añadir control para cambiar de capa directamente en la esquina superior derecha del mapa
+    folium.LayerControl(position='topright').add_to(m)
+    return m
 
 st.title("🌿 BioExplora Chile: Portal de Biodiversidad")
 st.markdown("Visualizador interactivo de monitoreo y rescates a nivel nacional.")
@@ -75,17 +103,10 @@ try:
     df = load_data()
     
     tab1, tab2, tab3 = st.tabs(["📌 Mapa Geográfico", "📊 Estadísticas", "🔍 Buscador de Especies"])
-    
-    # Estilos válidos para px.scatter_map (libres de token)
-    estilos_mapa = {
-        "🗺️ Político / Callejero (OpenStreetMap)": "open-street-map",
-        "⚪ Claro Minimalista (CartoDB Positron)": "carto-positron",
-        "🎨 Oscuro (CartoDB Dark Matter)": "carto-darkmatter"
-    }
 
     with tab1:
-        st.subheader("Filtros y Estilo del Mapa")
-        c_reg, c_est, c_style = st.columns([1, 1, 1])
+        st.subheader("Filtros del Mapa")
+        c_reg, c_est = st.columns(2)
         
         with c_reg:
             regiones = ["Todas"] + sorted([r for r in df['Region'].unique() if r not in ['Sin Información']])
@@ -97,11 +118,7 @@ try:
                 ["Todas", "Solo Identificadas", "No Identificadas"],
                 horizontal=True
             )
-            
-        with c_style:
-            map_theme = st.selectbox("Capa del Mapa:", list(estilos_mapa.keys()))
         
-        # Filtrado de coordenadas válidas dentro del territorio
         df_map = df.dropna(subset=['Latitud', 'Longitud'])
         df_map = df_map[(df_map['Latitud'] < 0) & (df_map['Longitud'] < 0)]
         
@@ -118,22 +135,10 @@ try:
         if len(df_map) > 0:
             lat_center = df_map['Latitud'].mean()
             lon_center = df_map['Longitud'].mean()
-            zoom_level = 4 if selected_region == "Todas" else 6.5
+            zoom_level = 4 if selected_region == "Todas" else 7
 
-            fig = px.scatter_map(
-                df_map,
-                lat="Latitud",
-                lon="Longitud",
-                color="TipoEvento",
-                hover_name="NombreComun",
-                hover_data={"Region": True, "Comuna": True, "Latitud": ":.4f", "Longitud": ":.4f", "TipoEvento": True},
-                zoom=zoom_level,
-                center=dict(lat=lat_center, lon=lon_center),
-                map_style=estilos_mapa[map_theme],
-                height=650
-            )
-            fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
-            st.plotly_chart(fig, use_container_width=True)
+            mapa = crear_mapa_folium(df_map, lat_center, lon_center, zoom_level)
+            st_folium(mapa, use_container_width=True, height=650, returned_objects=[])
         else:
             st.warning("No hay registros que coincidan con los filtros seleccionados.")
             
@@ -170,20 +175,13 @@ try:
                     df_esp_geo = df_esp.dropna(subset=['Latitud', 'Longitud'])
                     df_esp_geo = df_esp_geo[(df_esp_geo['Latitud'] < 0) & (df_esp_geo['Longitud'] < 0)]
                     if len(df_esp_geo) > 0:
-                        fig_esp = px.scatter_map(
-                            df_esp_geo,
-                            lat="Latitud",
-                            lon="Longitud",
-                            color="TipoEvento",
-                            hover_name="NombreComun",
-                            hover_data={"Region": True, "Comuna": True, "TipoEvento": True},
-                            zoom=4,
-                            center=dict(lat=df_esp_geo['Latitud'].mean(), lon=df_esp_geo['Longitud'].mean()),
-                            map_style="open-street-map",
-                            height=500
+                        mapa_esp = crear_mapa_folium(
+                            df_esp_geo, 
+                            df_esp_geo['Latitud'].mean(), 
+                            df_esp_geo['Longitud'].mean(), 
+                            5
                         )
-                        fig_esp.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
-                        st.plotly_chart(fig_esp, use_container_width=True)
+                        st_folium(mapa_esp, use_container_width=True, height=500, returned_objects=[])
 
 except Exception as e:
     st.error(f"Error al cargar la base de datos: {e}")
