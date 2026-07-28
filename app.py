@@ -13,7 +13,7 @@ def load_data():
     # 1. Leer el archivo liviano
     df = pd.read_parquet("datos_bioexplora_light.parquet")
     
-    # 2. Convertir columnas a objetos estándar para evitar problemas con 'category'
+    # 2. Convertir columnas a objetos estándar para evitar restricciones de 'category'
     for col in df.columns:
         if isinstance(df[col].dtype, pd.CategoricalDtype):
             df[col] = df[col].astype(str)
@@ -31,38 +31,38 @@ def load_data():
     lon_col = next((c for c in df.columns if 'lon' in c or 'lng' in c), None)
     origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
 
-    # 4. Procesar y limpiar Region
+    # 4. Limpieza de Región
     if region_col:
         df['Region'] = df[region_col].fillna("Sin Información").astype(str).str.strip().str.title()
     else:
         df['Region'] = "Sin Información"
 
-    # 5. Procesar y limpiar Comuna
+    # 5. Limpieza de Comuna
     if comuna_col:
         df['Comuna'] = df[comuna_col].fillna("Sin Información").astype(str).str.strip().str.title()
     else:
         df['Comuna'] = "Sin Información"
     
-    # 6. Procesar y limpiar NombreComun
+    # 6. Limpieza de Especie
     if nombre_col:
         df['NombreComun'] = df[nombre_col].fillna("Especie No Especificada").astype(str).str.strip().str.title()
     else:
         df['NombreComun'] = "Especie No Especificada"
 
-    # 7. Procesar TipoEvento
+    # 7. Limpieza de TipoEvento
     if origen_col:
         df['TipoEvento'] = df[origen_col].fillna("Registro").astype(str).str.strip()
     else:
         df['TipoEvento'] = "Registro"
 
-    # 8. Reemplazos de cadenas vacías/nulas residuales
+    # 8. Reemplazo de cadenas nulas residuales
     invalid_names = ['Nan', 'None', '', 'Null', 'Sin Informacion', 'Sin Información', '<Na>']
     df['NombreComun'] = df['NombreComun'].replace(invalid_names, 'Especie No Especificada')
     df['Region'] = df['Region'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Sin Información')
     df['Comuna'] = df['Comuna'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Sin Información')
     df['TipoEvento'] = df['TipoEvento'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Registro')
     
-    # 9. Coordenadas numéricas
+    # 9. Conversión de coordenadas a numéricas
     df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
     df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
     
@@ -76,30 +76,39 @@ try:
     
     tab1, tab2, tab3 = st.tabs(["📌 Mapa Geográfico", "📊 Estadísticas", "🔍 Buscador de Especies"])
     
+    # Dictionario de estilos de mapa
+    estilos_mapa = {
+        "🗺️ Político / Callejero (OpenStreetMap)": "open-street-map",
+        "⛰️ Topográfico / Relieve (OpenTopoMap)": "open-topo-map",
+        "🎨 Oscuro (CartoDB Dark Matter)": "carto-darkmatter",
+        "⚪ Claro Minimalista (CartoDB Positron)": "carto-positron"
+    }
+
     with tab1:
-        st.subheader("Filtros del Mapa")
-        col_reg, col_est = st.columns(2)
+        st.subheader("Filtros y Estilo del Mapa")
+        c_reg, c_est, c_style = st.columns([1, 1, 1])
         
-        with col_reg:
+        with c_reg:
             regiones = ["Todas"] + sorted([r for r in df['Region'].unique() if r not in ['Sin Información']])
             selected_region = st.selectbox("Seleccione Región:", regiones)
             
-        with col_est:
+        with c_est:
             filtro_identificacion = st.radio(
                 "Estado de Identificación:",
                 ["Todas", "Solo Identificadas", "No Identificadas"],
                 horizontal=True
             )
+            
+        with c_style:
+            map_theme = st.selectbox("Capa del Mapa:", list(estilos_mapa.keys()))
         
-        # Filtrado de coordenadas válidas
+        # Filtrado de coordenadas dentro del territorio
         df_map = df.dropna(subset=['Latitud', 'Longitud'])
         df_map = df_map[(df_map['Latitud'] < 0) & (df_map['Longitud'] < 0)]
         
-        # Aplicar filtro regional
         if selected_region != "Todas":
             df_map = df_map[df_map['Region'] == selected_region]
             
-        # Aplicar filtro de identificación de especie
         if filtro_identificacion == "Solo Identificadas":
             df_map = df_map[df_map['NombreComun'] != 'Especie No Especificada']
         elif filtro_identificacion == "No Identificadas":
@@ -108,18 +117,24 @@ try:
         st.info(f"Registros georreferenciados en vista: {len(df_map):,}")
         
         if len(df_map) > 0:
-            fig = px.scatter_geo(
+            lat_center = df_map['Latitud'].mean()
+            lon_center = df_map['Longitud'].mean()
+            zoom_level = 4 if selected_region == "Todas" else 6.5
+
+            fig = px.scatter_map(
                 df_map,
                 lat="Latitud",
                 lon="Longitud",
                 color="TipoEvento",
                 hover_name="NombreComun",
                 hover_data={"Region": True, "Comuna": True, "Latitud": ":.4f", "Longitud": ":.4f", "TipoEvento": True},
-                scope="south america",
-                height=600
+                zoom=zoom_level,
+                center=dict(lat=lat_center, lon=lon_center),
+                map_style=estilos_mapa[map_theme],
+                height=650
             )
-            fig.update_geos(center=dict(lat=-35.0, lon=-71.0), projection_scale=3.8, showland=True, landcolor="rgb(240, 240, 240)")
-            st.plotly_chart(fig, use_container_width=True)
+            fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+            st.plotly_chart(fig, width="stretch")
         else:
             st.warning("No hay registros que coincidan con los filtros seleccionados.")
             
@@ -134,10 +149,10 @@ try:
         with c1:
             st.markdown("### Top 10 Especies Más Frecuentes")
             top_esp = df[df['NombreComun'] != 'Especie No Especificada']['NombreComun'].value_counts().head(10)
-            st.dataframe(top_esp if not top_esp.empty else "No hay especies catalogadas", use_container_width=True)
+            st.dataframe(top_esp if not top_esp.empty else "No hay especies catalogadas", width="stretch")
         with c2:
             st.markdown("### Top 10 Comunas con Mayor Actividad")
-            st.dataframe(df['Comuna'].value_counts().head(10), use_container_width=True)
+            st.dataframe(df['Comuna'].value_counts().head(10), width="stretch")
             
     with tab3:
         st.subheader("Ficha de Especie")
@@ -151,23 +166,25 @@ try:
                 col_a, col_b = st.columns([1, 2])
                 with col_a:
                     st.markdown("#### Presencia por Comuna")
-                    st.dataframe(df_esp['Comuna'].value_counts().head(10), use_container_width=True)
+                    st.dataframe(df_esp['Comuna'].value_counts().head(10), width="stretch")
                 with col_b:
                     df_esp_geo = df_esp.dropna(subset=['Latitud', 'Longitud'])
                     df_esp_geo = df_esp_geo[(df_esp_geo['Latitud'] < 0) & (df_esp_geo['Longitud'] < 0)]
                     if len(df_esp_geo) > 0:
-                        fig_esp = px.scatter_geo(
+                        fig_esp = px.scatter_map(
                             df_esp_geo,
                             lat="Latitud",
                             lon="Longitud",
                             color="TipoEvento",
                             hover_name="NombreComun",
                             hover_data={"Region": True, "Comuna": True, "TipoEvento": True},
-                            scope="south america",
+                            zoom=4,
+                            center=dict(lat=df_esp_geo['Latitud'].mean(), lon=df_esp_geo['Longitud'].mean()),
+                            map_style="open-street-map",
                             height=500
                         )
-                        fig_esp.update_geos(center=dict(lat=-35.0, lon=-71.0), projection_scale=4.0, showland=True)
-                        st.plotly_chart(fig_esp, use_container_width=True)
+                        fig_esp.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+                        st.plotly_chart(fig_esp, width="stretch")
 
 except Exception as e:
     st.error(f"Error al cargar la base de datos: {e}")
