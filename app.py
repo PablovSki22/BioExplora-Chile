@@ -30,7 +30,7 @@ COORDENADAS_COMUNAS = {
     "Natales": (-51.7269, -72.5062), "Puerto Natales": (-51.7269, -72.5062), "Porvenir": (-53.2954, -70.3668)
 }
 
-# MAPEO DIRECTO DE NOMBRES COMUNES A CIENTÍFICOS PARA GBIF
+# MAPEO DIRECTO DE NOMBRES COMUNES A CIENTÍFICOS PARA GBIF / iNATURALIST
 MAPEO_NOMBRES_CIENTIFICOS = {
     "sapito 4 ojos": "Pleurodema thaul",
     "sapito cuatro ojos": "Pleurodema thaul",
@@ -59,7 +59,7 @@ MAPEO_NOMBRES_CIENTIFICOS = {
 }
 
 def obtener_nombre_cientifico_resuelto(nombre_ingresado):
-    """Mapea el nombre común ingresado a su nombre científico para la API."""
+    """Mapea el nombre común ingresado a su nombre científico para las API."""
     if not nombre_ingresado:
         return nombre_ingresado
     limpio = str(nombre_ingresado).strip().lower()
@@ -112,9 +112,16 @@ def load_data():
 
 @st.cache_data(ttl=3600)
 def obtener_datos_gbif(nombre_especie):
+    """Obtiene la taxonomía de GBIF y busca la imagen en GBIF/iNaturalist."""
     nombre_query = obtener_nombre_cientifico_resuelto(nombre_especie)
     url = f"https://api.gbif.org/v1/species/match?name={nombre_query}"
+    
+    taxonomia = None
+    imagen_url = None
+    usage_key = None
+    
     try:
+        # 1. Obtener Jerarquía Taxonómica de GBIF
         res = requests.get(url, timeout=4)
         if res.status_code == 200:
             data = res.json()
@@ -130,21 +137,33 @@ def obtener_datos_gbif(nombre_especie):
                 "Nombre Científico": data.get("scientificName", nombre_query)
             }
             
-            imagen_url = None
+            # Intento A: Busqueda de fotos en registros de GBIF
             if usage_key:
-                media_url = f"https://api.gbif.org/v1/species/{usage_key}/media"
-                media_res = requests.get(media_url, timeout=4)
-                if media_res.status_code == 200:
-                    results = media_res.json().get('results', [])
-                    for item in results:
-                        if item.get('type') == 'StillImage' and 'identifier' in item:
-                            imagen_url = item['identifier']
-                            break
-                            
-            return taxonomia, imagen_url
+                occ_url = f"https://api.gbif.org/v1/occurrence/search?taxonKey={usage_key}&mediaType=StillImage&limit=1"
+                occ_res = requests.get(occ_url, timeout=4)
+                if occ_res.status_code == 200:
+                    results = occ_res.json().get('results', [])
+                    if results and 'media' in results[0]:
+                        for m in results[0]['media']:
+                            if m.get('type') == 'StillImage' and 'identifier' in m:
+                                imagen_url = m['identifier']
+                                break
+
+        # Intento B: Si GBIF no entregó foto, consultar iNaturalist (Fallback robusto)
+        if not imagen_url:
+            inat_url = f"https://api.inaturalist.org/v1/taxa?q={nombre_query}&per_page=1"
+            inat_res = requests.get(inat_url, timeout=4)
+            if inat_res.status_code == 200:
+                inat_data = inat_res.json().get('results', [])
+                if inat_data and 'default_photo' in inat_data[0]:
+                    photo_info = inat_data[0]['default_photo']
+                    if photo_info and 'medium_url' in photo_info:
+                        imagen_url = photo_info['medium_url']
+
     except Exception:
         pass
-    return None, None
+        
+    return taxonomia, imagen_url
 
 def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
     m = folium.Map(location=[lat_centro, lon_centro], zoom_start=zoom, tiles="OpenStreetMap")
@@ -216,7 +235,7 @@ try:
             zoom_level = 4 if selected_region == "Todas" else 7
 
             mapa = crear_mapa_folium(df_map, lat_center, lon_center, zoom_level)
-            st_folium(mapa, use_container_width=True, height=650, returned_objects=[])
+            st_folium(mapa, width="100%", height=650, returned_objects=[])
         else:
             st.warning("No hay registros que coincidan con los filtros seleccionados.")
             
@@ -246,7 +265,7 @@ try:
                     text_auto=True
                 )
                 fig_esp.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
-                st.plotly_chart(fig_esp, use_container_width=True)
+                st.plotly_chart(fig_esp, width="100%")
 
         with c2:
             st.markdown("### Top 10 Comunas con Mayor Actividad")
@@ -264,7 +283,7 @@ try:
                     text_auto=True
                 )
                 fig_com.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
-                st.plotly_chart(fig_com, use_container_width=True)
+                st.plotly_chart(fig_com, width="100%")
 
     with tab3:
         st.subheader("Buscador y Ficha de Especie")
@@ -272,7 +291,7 @@ try:
         col_search1, col_search2 = st.columns([1, 1])
         
         with col_search1:
-            busqueda = st.text_input("1. Buscar por palabra o fragmento de nombre:", "ojos")
+            busqueda = st.text_input("1. Buscar por palabra o fragmento de nombre:", "condor")
         
         if busqueda.strip():
             df_coincidencias = df[df['NombreComun'].str.contains(busqueda, case=False, na=False)]
@@ -293,16 +312,16 @@ try:
                 st.success(f"Mostrando información para **{especie_seleccionada}** ({len(df_esp):,} registros hallados).")
                 
                 st.markdown("---")
-                st.markdown("### 🧬 Ficha Taxonómica y Registro Fotográfico (GBIF)")
+                st.markdown("### 🧬 Ficha Taxonómica y Registro Fotográfico")
                 tax, img_url = obtener_datos_gbif(especie_seleccionada)
                 
                 col_info_a, col_info_b = st.columns([1, 1])
                 
                 with col_info_a:
                     if img_url:
-                        st.image(img_url, caption=f"Fotografía de referencia: {especie_seleccionada}", use_container_width=True)
+                        st.image(img_url, caption=f"Fotografía de referencia: {especie_seleccionada}", width="100%")
                     else:
-                        st.info("📷 No se encontró fotografía pública registrada en GBIF para esta especie.")
+                        st.info("📷 No se encontró fotografía pública registrada para esta especie.")
                         
                 with col_info_b:
                     if tax:
@@ -323,12 +342,12 @@ try:
                     st.markdown("#### Presencia por Comuna")
                     df_comuna_esp = df_esp['Comuna'].value_counts().reset_index()
                     df_comuna_esp.columns = ['Comuna', 'Registros']
-                    st.dataframe(df_comuna_esp, use_container_width=True, height=200)
+                    st.dataframe(df_comuna_esp, width="100%", height=200)
                     
                     st.markdown("#### Distribución por Región")
                     df_reg_esp = df_esp['Region'].value_counts().reset_index()
                     df_reg_esp.columns = ['Región', 'Registros']
-                    st.dataframe(df_reg_esp, use_container_width=True, height=180)
+                    st.dataframe(df_reg_esp, width="100%", height=180)
 
                 with col_b:
                     st.markdown("#### Ubicación de Avistamientos")
@@ -340,13 +359,13 @@ try:
                         zoom_dinamico = 9 if len(df_esp_geo) <= 3 else 6
                         
                         mapa_esp = crear_mapa_folium(df_esp_geo, lat_c, lon_c, zoom_dinamico)
-                        st_folium(mapa_esp, use_container_width=True, height=450, returned_objects=[])
+                        st_folium(mapa_esp, width="100%", height=450, returned_objects=[])
                     else:
                         st.warning("No fue posible ubicar geográficamente este registro.")
 
                 st.markdown("#### Detalle de Registros Encontrados")
                 cols_mostrar = [c for c in ['NombreComun', 'Region', 'Comuna', 'TipoEvento', 'Latitud', 'Longitud'] if c in df_esp.columns]
-                st.dataframe(df_esp[cols_mostrar], use_container_width=True)
+                st.dataframe(df_esp[cols_mostrar], width="100%")
 
 except Exception as e:
     st.error(f"Error al cargar la base de datos: {e}")
