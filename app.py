@@ -10,13 +10,20 @@ st.set_page_config(
 
 @st.cache_data
 def load_data():
-    # Leer el archivo liviano preprocesado
+    # 1. Leer el archivo liviano
     df = pd.read_parquet("datos_bioexplora_light.parquet")
     
-    # Estandarizar nombres de columnas a minúsculas y sin espacios
+    # 2. Convertir TODAS las columnas a objetos estándar para eliminar la restricción 'category'
+    for col in df.columns:
+        if isinstance(df[col].dtype, pd.CategoricalDtype):
+            df[col] = df[col].astype(str)
+        else:
+            df[col] = df[col].astype(object)
+
+    # 3. Estandarizar nombres de columnas a minúsculas
     df.columns = [str(c).strip().lower() for c in df.columns]
     
-    # Mapear columnas dinámicamente
+    # Mapeo dinámico de columnas
     region_col = next((c for c in df.columns if 'region' in c), None)
     comuna_col = next((c for c in df.columns if 'comuna' in c), None)
     nombre_col = next((c for c in df.columns if 'nombre' in c or 'especie' in c or 'taxa' in c), None)
@@ -24,42 +31,38 @@ def load_data():
     lon_col = next((c for c in df.columns if 'lon' in c or 'lng' in c), None)
     origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
 
-    # 1. Rellenar nulos reales (NaN/None) a nivel de dataframe
+    # 4. Procesar y limpiar Region
     if region_col:
         df['Region'] = df[region_col].fillna("Sin Información").astype(str).str.strip().str.title()
     else:
         df['Region'] = "Sin Información"
 
+    # 5. Procesar y limpiar Comuna
     if comuna_col:
         df['Comuna'] = df[comuna_col].fillna("Sin Información").astype(str).str.strip().str.title()
     else:
         df['Comuna'] = "Sin Información"
     
+    # 6. Procesar y limpiar NombreComun
     if nombre_col:
         df['NombreComun'] = df[nombre_col].fillna("Especie No Especificada").astype(str).str.strip().str.title()
     else:
         df['NombreComun'] = "Especie No Especificada"
 
+    # 7. Procesar TipoEvento
     if origen_col:
         df['TipoEvento'] = df[origen_col].fillna("Registro").astype(str).str.strip()
     else:
         df['TipoEvento'] = "Registro"
 
-    # 2. Reemplazar variaciones en texto que puedan pasar como nulos
-    reemplazos_nulos = {
-        'Nan': 'Especie No Especificada', 
-        'None': 'Especie No Especificada', 
-        '': 'Especie No Especificada',
-        'Null': 'Especie No Especificada',
-        'Sin Informacion': 'Especie No Especificada',
-        'Sin Información': 'Especie No Especificada'
-    }
-    df['NombreComun'] = df['NombreComun'].replace(reemplazos_nulos)
-
-    reemplazos_region = {'Nan': 'Sin Información', 'None': 'Sin Información', '': 'Sin Información', 'Null': 'Sin Información'}
-    df['Region'] = df['Region'].replace(reemplazos_region)
-    df['Comuna'] = df['Comuna'].replace(reemplazos_region)
+    # 8. Reemplazos de cadenas vacías/nulas residuales
+    invalid_names = ['Nan', 'None', '', 'Null', 'Sin Informacion', 'Sin Información', '<Na>']
+    df['NombreComun'] = df['NombreComun'].replace(invalid_names, 'Especie No Especificada')
+    df['Region'] = df['Region'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Sin Información')
+    df['Comuna'] = df['Comuna'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Sin Información')
+    df['TipoEvento'] = df['TipoEvento'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Registro')
     
+    # 9. Coordenadas numéricas
     df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
     df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
     
@@ -75,7 +78,7 @@ try:
     
     with tab1:
         st.subheader("Filtro por Región")
-        regiones = ["Todas"] + sorted([r for r in df['Region'].unique() if r not in ['Nan', 'None', 'Sin Información']])
+        regiones = ["Todas"] + sorted([r for r in df['Region'].unique() if r not in ['Sin Información']])
         selected_region = st.selectbox("Seleccione Región:", regiones)
         
         df_map = df.dropna(subset=['Latitud', 'Longitud'])
