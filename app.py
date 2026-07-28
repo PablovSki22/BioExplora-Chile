@@ -55,8 +55,16 @@ def load_data():
     df['Comuna'] = df['Comuna'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Sin Información')
     df['TipoEvento'] = df['TipoEvento'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Registro')
     
-    df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
-    df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
+    # Garantizar conversión estricta a números flotantes
+    if lat_col:
+        df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce')
+    else:
+        df['Latitud'] = None
+
+    if lon_col:
+        df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce')
+    else:
+        df['Longitud'] = None
     
     return df
 
@@ -76,18 +84,18 @@ def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
     ).add_to(m)
 
     for _, row in df_puntos.iterrows():
-        color_marker = "green" if row["TipoEvento"] == "Monitoreo" else "orange"
+        color_marker = "green" if row.get("TipoEvento") == "Monitoreo" else "orange"
         popup_txt = f"<b>Especie:</b> {row['NombreComun']}<br><b>Región:</b> {row['Region']}<br><b>Comuna:</b> {row['Comuna']}<br><b>Tipo:</b> {row['TipoEvento']}"
         
         folium.CircleMarker(
             location=[row['Latitud'], row['Longitud']],
-            radius=5,
+            radius=6,
             popup=folium.Popup(popup_txt, max_width=300),
-            tooltip=row['NombreComun'],
+            tooltip=f"{row['NombreComun']} ({row['Comuna']})",
             color=color_marker,
             fill=True,
             fill_color=color_marker,
-            fill_opacity=0.7
+            fill_opacity=0.8
         ).add_to(m)
 
     folium.LayerControl(position='topright').add_to(m)
@@ -117,6 +125,7 @@ try:
                 horizontal=True
             )
         
+        # Filtro de coordenadas válidas para Chile
         df_map = df.dropna(subset=['Latitud', 'Longitud'])
         df_map = df_map[(df_map['Latitud'] < 0) & (df_map['Longitud'] < 0)]
         
@@ -149,7 +158,6 @@ try:
         col3.metric("Comunas Cubiertas", f"{df['Comuna'].nunique():,}")
         
         st.markdown("---")
-        
         c1, c2 = st.columns(2)
         
         with c1:
@@ -169,8 +177,6 @@ try:
                 )
                 fig_esp.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
                 st.plotly_chart(fig_esp, use_container_width=True)
-            else:
-                st.info("No hay datos de especies catalogadas.")
 
         with c2:
             st.markdown("### Top 10 Comunas con Mayor Actividad")
@@ -189,19 +195,16 @@ try:
                 )
                 fig_com.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
                 st.plotly_chart(fig_com, use_container_width=True)
-            else:
-                st.info("No hay datos de comunas.")
 
-    # TAB 3: BUSCADOR MEJORADO DE ESPECIES
+    # TAB 3: BUSCADOR OPTIMIZADO CON MAPA MEJORADO
     with tab3:
         st.subheader("Buscador y Ficha de Especie")
         
         col_search1, col_search2 = st.columns([1, 1])
         
         with col_search1:
-            busqueda = st.text_input("1. Buscar por palabra o fragmento de nombre:", "Guanaco")
+            busqueda = st.text_input("1. Buscar por palabra o fragmento de nombre:", "ojos")
         
-        # Filtrado de coincidencias
         if busqueda.strip():
             df_coincidencias = df[df['NombreComun'].str.contains(busqueda, case=False, na=False)]
             especies_halladas = sorted([e for e in df_coincidencias['NombreComun'].unique() if e != 'Especie No Especificada'])
@@ -226,30 +229,37 @@ try:
                     st.markdown("#### Presencia por Comuna")
                     df_comuna_esp = df_esp['Comuna'].value_counts().reset_index()
                     df_comuna_esp.columns = ['Comuna', 'Registros']
-                    st.dataframe(df_comuna_esp, use_container_width=True, height=250)
+                    st.dataframe(df_comuna_esp, use_container_width=True, height=200)
                     
                     st.markdown("#### Distribución por Región")
                     df_reg_esp = df_esp['Region'].value_counts().reset_index()
                     df_reg_esp.columns = ['Región', 'Registros']
-                    st.dataframe(df_reg_esp, use_container_width=True, height=200)
+                    st.dataframe(df_reg_esp, use_container_width=True, height=180)
 
                 with col_b:
                     st.markdown("#### Ubicación de Avistamientos")
+                    
+                    # Filtrar puntos válidos
                     df_esp_geo = df_esp.dropna(subset=['Latitud', 'Longitud'])
-                    df_esp_geo = df_esp_geo[(df_esp_geo['Latitud'] < 0) & (df_esp_geo['Longitud'] < 0)]
+                    df_esp_geo = df_esp_geo[(df_esp_geo['Latitud'] != 0) & (df_esp_geo['Longitud'] != 0)]
+                    
+                    # Si la latitud viene positiva por error de tipeo en los datos brutos, la corregimos automáticamente a negativa (Chile)
+                    df_esp_geo['Latitud'] = df_esp_geo['Latitud'].apply(lambda x: -abs(x) if abs(x) > 10 else x)
+                    df_esp_geo['Longitud'] = df_esp_geo['Longitud'].apply(lambda x: -abs(x) if abs(x) > 10 else x)
                     
                     if len(df_esp_geo) > 0:
-                        mapa_esp = crear_mapa_folium(
-                            df_esp_geo, 
-                            df_esp_geo['Latitud'].mean(), 
-                            df_esp_geo['Longitud'].mean(), 
-                            5
-                        )
-                        st_folium(mapa_esp, use_container_width=True, height=480, returned_objects=[])
+                        # Cálculo de centro y zoom adaptativo
+                        lat_c = df_esp_geo['Latitud'].mean()
+                        lon_c = df_esp_geo['Longitud'].mean()
+                        
+                        # Si hay pocos puntos (o 1 solo), hacer zoom cercano (10); si son muchos, zoom general (6)
+                        zoom_dinamico = 10 if len(df_esp_geo) <= 3 else 6
+                        
+                        mapa_esp = crear_mapa_folium(df_esp_geo, lat_c, lon_c, zoom_dinamico)
+                        st_folium(mapa_esp, use_container_width=True, height=450, returned_objects=[])
                     else:
-                        st.info("Esta especie no cuenta con coordenadas válidas para mostrar en mapa.")
-                
-                # Tabla detallada al final
+                        st.info("⚠️ Este registro no posee coordenadas numéricas exactas en la base original, pero la presencia registrada corresponde a la comuna listada a la izquierda.")
+
                 st.markdown("---")
                 st.markdown("#### Detalle de Registros Encontrados")
                 cols_mostrar = [c for c in ['NombreComun', 'Region', 'Comuna', 'TipoEvento', 'Latitud', 'Longitud'] if c in df_esp.columns]
