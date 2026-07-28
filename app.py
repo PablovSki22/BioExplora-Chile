@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 import folium
 from streamlit_folium import st_folium
 
@@ -60,14 +61,12 @@ def load_data():
     return df
 
 def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
-    # Crear mapa base con OpenStreetMap por defecto
     m = folium.Map(
         location=[lat_centro, lon_centro],
         zoom_start=zoom,
         tiles="OpenStreetMap"
     )
     
-    # Agregar capas base adicionales para alternar en el mapa
     folium.TileLayer('CartoDB positron', name='Claro Minimalista').add_to(m)
     folium.TileLayer('CartoDB dark_matter', name='Oscuro').add_to(m)
     folium.TileLayer(
@@ -76,7 +75,6 @@ def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
         name='Satelital / Geográfico'
     ).add_to(m)
 
-    # Agregar marcadores
     for _, row in df_puntos.iterrows():
         color_marker = "green" if row["TipoEvento"] == "Monitoreo" else "orange"
         popup_txt = f"<b>Especie:</b> {row['NombreComun']}<br><b>Región:</b> {row['Region']}<br><b>Comuna:</b> {row['Comuna']}<br><b>Tipo:</b> {row['TipoEvento']}"
@@ -92,7 +90,6 @@ def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
             fill_opacity=0.7
         ).add_to(m)
 
-    # Añadir control para cambiar de capa directamente en la esquina superior derecha del mapa
     folium.LayerControl(position='topright').add_to(m)
     return m
 
@@ -104,6 +101,7 @@ try:
     
     tab1, tab2, tab3 = st.tabs(["📌 Mapa Geográfico", "📊 Estadísticas", "🔍 Buscador de Especies"])
 
+    # TAB 1: MAPA GEOGRÁFICO
     with tab1:
         st.subheader("Filtros del Mapa")
         c_reg, c_est = st.columns(2)
@@ -142,6 +140,7 @@ try:
         else:
             st.warning("No hay registros que coincidan con los filtros seleccionados.")
             
+    # TAB 2: ESTADÍSTICAS Y GRÁFICOS
     with tab2:
         st.subheader("Métricas Generales")
         col1, col2, col3 = st.columns(3)
@@ -149,31 +148,96 @@ try:
         col2.metric("Especies Distintas", f"{df[df['NombreComun'] != 'Especie No Especificada']['NombreComun'].nunique():,}")
         col3.metric("Comunas Cubiertas", f"{df['Comuna'].nunique():,}")
         
+        st.markdown("---")
+        
         c1, c2 = st.columns(2)
+        
         with c1:
             st.markdown("### Top 10 Especies Más Frecuentes")
-            top_esp = df[df['NombreComun'] != 'Especie No Especificada']['NombreComun'].value_counts().head(10)
-            st.dataframe(top_esp if not top_esp.empty else "No hay especies catalogadas", use_container_width=True)
+            df_esp_chart = df[df['NombreComun'] != 'Especie No Especificada']['NombreComun'].value_counts().head(10).reset_index()
+            df_esp_chart.columns = ['Especie', 'Cantidad']
+            
+            if not df_esp_chart.empty:
+                fig_esp = px.bar(
+                    df_esp_chart,
+                    x='Cantidad',
+                    y='Especie',
+                    orientation='h',
+                    color='Cantidad',
+                    color_continuous_scale='Greens',
+                    text_auto=True
+                )
+                fig_esp.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
+                st.plotly_chart(fig_esp, use_container_width=True)
+            else:
+                st.info("No hay datos de especies catalogadas.")
+
         with c2:
             st.markdown("### Top 10 Comunas con Mayor Actividad")
-            st.dataframe(df['Comuna'].value_counts().head(10), use_container_width=True)
+            df_com_chart = df['Comuna'].value_counts().head(10).reset_index()
+            df_com_chart.columns = ['Comuna', 'Cantidad']
             
+            if not df_com_chart.empty:
+                fig_com = px.bar(
+                    df_com_chart,
+                    x='Cantidad',
+                    y='Comuna',
+                    orientation='h',
+                    color='Cantidad',
+                    color_continuous_scale='Teal',
+                    text_auto=True
+                )
+                fig_com.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
+                st.plotly_chart(fig_com, use_container_width=True)
+            else:
+                st.info("No hay datos de comunas.")
+
+    # TAB 3: BUSCADOR MEJORADO DE ESPECIES
     with tab3:
-        st.subheader("Ficha de Especie")
-        especie_input = st.text_input("Buscar Especie (ej. Guanaco, Pudú, Zorro, Quisco, Lagartija):", "Lagartija")
+        st.subheader("Buscador y Ficha de Especie")
         
-        if especie_input:
-            df_esp = df[df['NombreComun'].str.contains(especie_input, case=False, na=False)]
-            st.success(f"Se encontraron {len(df_esp):,} registros para '{especie_input}'.")
+        col_search1, col_search2 = st.columns([1, 1])
+        
+        with col_search1:
+            busqueda = st.text_input("1. Buscar por palabra o fragmento de nombre:", "Guanaco")
+        
+        # Filtrado de coincidencias
+        if busqueda.strip():
+            df_coincidencias = df[df['NombreComun'].str.contains(busqueda, case=False, na=False)]
+            especies_halladas = sorted([e for e in df_coincidencias['NombreComun'].unique() if e != 'Especie No Especificada'])
             
-            if len(df_esp) > 0:
+            with col_search2:
+                if especies_halladas:
+                    especie_seleccionada = st.selectbox(
+                        "2. Seleccione la especie exacta encontrada:",
+                        especies_halladas
+                    )
+                else:
+                    especie_seleccionada = None
+                    st.warning("No se encontraron especies específicas registradas con ese término.")
+            
+            if especie_seleccionada:
+                df_esp = df[df['NombreComun'] == especie_seleccionada]
+                st.success(f"Mostrando información para **{especie_seleccionada}** ({len(df_esp):,} registros hallados).")
+                
                 col_a, col_b = st.columns([1, 2])
+                
                 with col_a:
                     st.markdown("#### Presencia por Comuna")
-                    st.dataframe(df_esp['Comuna'].value_counts().head(10), use_container_width=True)
+                    df_comuna_esp = df_esp['Comuna'].value_counts().reset_index()
+                    df_comuna_esp.columns = ['Comuna', 'Registros']
+                    st.dataframe(df_comuna_esp, use_container_width=True, height=250)
+                    
+                    st.markdown("#### Distribución por Región")
+                    df_reg_esp = df_esp['Region'].value_counts().reset_index()
+                    df_reg_esp.columns = ['Región', 'Registros']
+                    st.dataframe(df_reg_esp, use_container_width=True, height=200)
+
                 with col_b:
+                    st.markdown("#### Ubicación de Avistamientos")
                     df_esp_geo = df_esp.dropna(subset=['Latitud', 'Longitud'])
                     df_esp_geo = df_esp_geo[(df_esp_geo['Latitud'] < 0) & (df_esp_geo['Longitud'] < 0)]
+                    
                     if len(df_esp_geo) > 0:
                         mapa_esp = crear_mapa_folium(
                             df_esp_geo, 
@@ -181,7 +245,15 @@ try:
                             df_esp_geo['Longitud'].mean(), 
                             5
                         )
-                        st_folium(mapa_esp, use_container_width=True, height=500, returned_objects=[])
+                        st_folium(mapa_esp, use_container_width=True, height=480, returned_objects=[])
+                    else:
+                        st.info("Esta especie no cuenta con coordenadas válidas para mostrar en mapa.")
+                
+                # Tabla detallada al final
+                st.markdown("---")
+                st.markdown("#### Detalle de Registros Encontrados")
+                cols_mostrar = [c for c in ['NombreComun', 'Region', 'Comuna', 'TipoEvento', 'Latitud', 'Longitud'] if c in df_esp.columns]
+                st.dataframe(df_esp[cols_mostrar], use_container_width=True)
 
 except Exception as e:
     st.error(f"Error al cargar la base de datos: {e}")
