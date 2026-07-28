@@ -76,10 +76,9 @@ try:
     
     tab1, tab2, tab3 = st.tabs(["📌 Mapa Geográfico", "📊 Estadísticas", "🔍 Buscador de Especies"])
     
-    # Dictionario de estilos de mapa
+    # Diccionario de estilos Mapbox libres de token
     estilos_mapa = {
         "🗺️ Político / Callejero (OpenStreetMap)": "open-street-map",
-        "⛰️ Topográfico / Relieve (OpenTopoMap)": "open-topo-map",
         "🎨 Oscuro (CartoDB Dark Matter)": "carto-darkmatter",
         "⚪ Claro Minimalista (CartoDB Positron)": "carto-positron"
     }
@@ -102,7 +101,7 @@ try:
         with c_style:
             map_theme = st.selectbox("Capa del Mapa:", list(estilos_mapa.keys()))
         
-        # Filtrado de coordenadas dentro del territorio
+        # Filtrado de coordenadas válidas
         df_map = df.dropna(subset=['Latitud', 'Longitud'])
         df_map = df_map[(df_map['Latitud'] < 0) & (df_map['Longitud'] < 0)]
         
@@ -119,9 +118,9 @@ try:
         if len(df_map) > 0:
             lat_center = df_map['Latitud'].mean()
             lon_center = df_map['Longitud'].mean()
-            zoom_level = 4 if selected_region == "Todas" else 6.5
+            zoom_level = 4 if selected_region == "Todas" else 7
 
-            fig = px.scatter_map(
+            fig = px.scatter_mapbox(
                 df_map,
                 lat="Latitud",
                 lon="Longitud",
@@ -130,11 +129,11 @@ try:
                 hover_data={"Region": True, "Comuna": True, "Latitud": ":.4f", "Longitud": ":.4f", "TipoEvento": True},
                 zoom=zoom_level,
                 center=dict(lat=lat_center, lon=lon_center),
-                map_style=estilos_mapa[map_theme],
+                mapbox_style=estilos_mapa[map_theme],
                 height=650
             )
-            fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-            st.plotly_chart(fig, width="stretch")
+            fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("No hay registros que coincidan con los filtros seleccionados.")
             
@@ -149,10 +148,10 @@ try:
         with c1:
             st.markdown("### Top 10 Especies Más Frecuentes")
             top_esp = df[df['NombreComun'] != 'Especie No Especificada']['NombreComun'].value_counts().head(10)
-            st.dataframe(top_esp if not top_esp.empty else "No hay especies catalogadas", width="stretch")
+            st.dataframe(top_esp if not top_esp.empty else "No hay especies catalogadas", use_container_width=True)
         with c2:
             st.markdown("### Top 10 Comunas con Mayor Actividad")
-            st.dataframe(df['Comuna'].value_counts().head(10), width="stretch")
+            st.dataframe(df['Comuna'].value_counts().head(10), use_container_width=True)
             
     with tab3:
         st.subheader("Ficha de Especie")
@@ -166,12 +165,12 @@ try:
                 col_a, col_b = st.columns([1, 2])
                 with col_a:
                     st.markdown("#### Presencia por Comuna")
-                    st.dataframe(df_esp['Comuna'].value_counts().head(10), width="stretch")
+                    st.dataframe(df_esp['Comuna'].value_counts().head(10), use_container_width=True)
                 with col_b:
                     df_esp_geo = df_esp.dropna(subset=['Latitud', 'Longitud'])
                     df_esp_geo = df_esp_geo[(df_esp_geo['Latitud'] < 0) & (df_esp_geo['Longitud'] < 0)]
                     if len(df_esp_geo) > 0:
-                        fig_esp = px.scatter_map(
+                        fig_esp = px.scatter_mapbox(
                             df_esp_geo,
                             lat="Latitud",
                             lon="Longitud",
@@ -180,11 +179,11 @@ try:
                             hover_data={"Region": True, "Comuna": True, "TipoEvento": True},
                             zoom=4,
                             center=dict(lat=df_esp_geo['Latitud'].mean(), lon=df_esp_geo['Longitud'].mean()),
-                            map_style="open-street-map",
+                            mapbox_style="open-street-map",
                             height=500
                         )
-                        fig_esp.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-                        st.plotly_chart(fig_esp, width="stretch")
+                        fig_esp.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
+                        st.plotly_chart(fig_esp, use_container_width=True)
 
 except Exception as e:
     st.error(f"Error al cargar la base de datos: {e}")
