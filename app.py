@@ -30,19 +30,39 @@ COORDENADAS_COMUNAS = {
     "Natales": (-51.7269, -72.5062), "Puerto Natales": (-51.7269, -72.5062), "Porvenir": (-53.2954, -70.3668)
 }
 
-# MAPEO DIRECTO DE NOMBRES COMUNES A CIENTÍFICOS PARA GBIF / iNATURALIST
+# MAPEO EXTENDIDO DE NOMBRES COMUNES A CIENTÍFICOS PARA GBIF / iNATURALIST
 MAPEO_NOMBRES_CIENTIFICOS = {
+    # Anfibios
+    "ranita de antifaz": "Batrachyla taeniata",
+    "ranita antifaz": "Batrachyla taeniata",
+    "ranita de hojarasca": "Batrachyla leptopus",
+    "ranita de hojarasca de calcarata": "Eupsophus calcaratus",
     "sapito 4 ojos": "Pleurodema thaul",
     "sapito cuatro ojos": "Pleurodema thaul",
     "sapito de cuatro ojos": "Pleurodema thaul",
     "ranita de darwin": "Rhinoderma darwinii",
+    "sapo de rhensu": "Insuetophrynus acarpicus",
+    "sapo de atacama": "Rhinella atacamensis",
+    "sapo espinoso": "Rhinella spinulosa",
+    "rana chilena": "Calyptocephalella gayi",
+    
+    # Mamíferos
     "zorro culpeo": "Lycalopex culpaeus",
     "zorro chilla": "Lycalopex griseus",
+    "zorro de darwin": "Lycalopex fulvipes",
     "puma": "Puma concolor",
     "huemul": "Hippocamelus bisulcus",
     "pudú": "Pudu puda",
     "pudu": "Pudu puda",
     "monito del monte": "Dromiciops gliroides",
+    "guanaco": "Lama guanicoe",
+    "vicuña": "Vicugna vicugna",
+    "chinchilla cordillerana": "Chinchilla chinchilla",
+    "taruca": "Hippocamelus antisensis",
+    "gato colocolo": "Leopardus colocolo",
+    "guiña": "Leopardus guigna",
+    
+    # Aves
     "cóndor andino": "Vultur gryphus",
     "condor andino": "Vultur gryphus",
     "condor": "Vultur gryphus",
@@ -50,16 +70,28 @@ MAPEO_NOMBRES_CIENTIFICOS = {
     "carpintero negro": "Campephilus magellanicus",
     "pingüino de humboldt": "Spheniscus humboldti",
     "pinguino de humboldt": "Spheniscus humboldti",
+    "pingüino de magallanes": "Spheniscus magellanicus",
     "loica": "Leistes loyca",
-    "guanaco": "Lama guanicoe",
-    "chinchilla cordillerana": "Chinchilla chinchilla",
+    "chucao": "Scelorchilus rubecula",
+    "hued-hued": "Pteroptochos castaneus",
+    "rayadito": "Aphrastura spinicauda",
+    
+    # Reptiles
+    "lagartija esbelta": "Liolaemus tenuis",
+    "lagartija nítida": "Liolaemus nitidus",
+    "culebra de cola larga": "Philodryas chamissonis",
+    
+    # Flora
     "araucaria": "Araucaria araucana",
     "copihue": "Lapageria rosea",
-    "litre": "Lithraea caustica"
+    "litre": "Lithraea caustica",
+    "alerce": "Fitzroya cupressoides",
+    "quillay": "Quillaja saponaria",
+    "peumo": "Cryptocarya alba"
 }
 
 def obtener_nombre_cientifico_resuelto(nombre_ingresado):
-    """Mapea el nombre común ingresado a su nombre científico para las API."""
+    """Mapea el nombre común ingresado a su nombre científico exacto para las API."""
     if not nombre_ingresado:
         return nombre_ingresado
     limpio = str(nombre_ingresado).strip().lower()
@@ -127,15 +159,17 @@ def obtener_datos_gbif(nombre_especie):
             data = res.json()
             usage_key = data.get('usageKey')
             
-            taxonomia = {
-                "Reino": data.get("kingdom", "Desconocido"),
-                "Filo": data.get("phylum", "Desconocido"),
-                "Clase": data.get("class", "Desconocido"),
-                "Orden": data.get("order", "Desconocido"),
-                "Familia": data.get("family", "Desconocido"),
-                "Género": data.get("genus", "Desconocido"),
-                "Nombre Científico": data.get("scientificName", nombre_query)
-            }
+            # Si GBIF dio match aceptable
+            if data.get("matchType") != "NONE":
+                taxonomia = {
+                    "Reino": data.get("kingdom", "Desconocido"),
+                    "Filo": data.get("phylum", "Desconocido"),
+                    "Clase": data.get("class", "Desconocido"),
+                    "Orden": data.get("order", "Desconocido"),
+                    "Familia": data.get("family", "Desconocido"),
+                    "Género": data.get("genus", "Desconocido"),
+                    "Nombre Científico": data.get("scientificName", nombre_query)
+                }
             
             # Intento A: Búsqueda de fotos en registros de GBIF
             if usage_key:
@@ -149,16 +183,35 @@ def obtener_datos_gbif(nombre_especie):
                                 imagen_url = m['identifier']
                                 break
 
-        # Intento B: Si GBIF no entregó foto, consultar iNaturalist (Fallback robusto)
-        if not imagen_url:
-            inat_url = f"https://api.inaturalist.org/v1/taxa?q={nombre_query}&per_page=1"
-            inat_res = requests.get(inat_url, timeout=4)
-            if inat_res.status_code == 200:
-                inat_data = inat_res.json().get('results', [])
-                if inat_data and 'default_photo' in inat_data[0]:
-                    photo_info = inat_data[0]['default_photo']
+        # Intento B: Consultar iNaturalist para foto o fallback taxonómico si GBIF falló
+        inat_url = f"https://api.inaturalist.org/v1/taxa?q={nombre_query}&per_page=1"
+        inat_res = requests.get(inat_url, timeout=4)
+        if inat_res.status_code == 200:
+            inat_data = inat_res.json().get('results', [])
+            if inat_data:
+                taxon_obj = inat_data[0]
+                
+                # Si GBIF no entregó foto, usar la de iNaturalist
+                if not imagen_url and 'default_photo' in taxon_obj:
+                    photo_info = taxon_obj['default_photo']
                     if photo_info and 'medium_url' in photo_info:
                         imagen_url = photo_info['medium_url']
+                
+                # Si GBIF no pudo armas la taxonomía, usar datos taxonómicos de iNaturalist
+                if not taxonomia:
+                    ancestors = taxon_obj.get('ancestors', [])
+                    tax_map = {a.get('rank'): a.get('name') for a in ancestors}
+                    tax_map[taxon_obj.get('rank')] = taxon_obj.get('name')
+                    
+                    taxonomia = {
+                        "Reino": tax_map.get("kingdom", "Animalia"),
+                        "Filo": tax_map.get("phylum", tax_map.get("phylum", "Chordata")),
+                        "Clase": tax_map.get("class", "Desconocido"),
+                        "Orden": tax_map.get("order", "Desconocido"),
+                        "Familia": tax_map.get("family", "Desconocido"),
+                        "Género": tax_map.get("genus", "Desconocido"),
+                        "Nombre Científico": taxon_obj.get("name", nombre_query)
+                    }
 
     except Exception:
         pass
