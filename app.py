@@ -257,10 +257,12 @@ def mostrar_pantalla_login():
             st.markdown("---")
             st.markdown("##### O ingresa directamente con Google:")
             try:
-                # Dibuja el botón nativo oficial de Google
+                # Intenta llamar a la función nativa de Streamlit
                 st.login("google")
-            except Exception as e:
-                st.info("💡 Configure los secretos de Google Client OAuth en Streamlit Cloud para activar este botón.")
+            except Exception:
+                # Si las credenciales no se han propagado en Streamlit Cloud aún:
+                st.button("🌐 Continuar con Google", disabled=True, help="El servicio de autenticación se está inicializando o requiere ajustar Secrets.")
+                st.info("💡 Configure los secretos de Google Client OAuth en los **Secrets** de Streamlit Cloud para activar este botón.")
 
         with tab_registro:
             st.subheader("Crear una nueva cuenta")
