@@ -24,31 +24,41 @@ def load_data():
     lon_col = next((c for c in df.columns if 'lon' in c or 'lng' in c), None)
     origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
 
-    # Limpieza y formateo asegurando tipo texto (str) primero
+    # 1. Rellenar nulos reales (NaN/None) a nivel de dataframe
     if region_col:
-        df['Region'] = df[region_col].astype(str).str.strip().str.title()
-        df['Region'] = df['Region'].replace({'Nan': 'Sin Información', 'None': 'Sin Información', '': 'Sin Información'})
+        df['Region'] = df[region_col].fillna("Sin Información").astype(str).str.strip().str.title()
     else:
         df['Region'] = "Sin Información"
 
     if comuna_col:
-        df['Comuna'] = df[comuna_col].astype(str).str.strip().str.title()
-        df['Comuna'] = df['Comuna'].replace({'Nan': 'Sin Información', 'None': 'Sin Información', '': 'Sin Información'})
+        df['Comuna'] = df[comuna_col].fillna("Sin Información").astype(str).str.strip().str.title()
     else:
         df['Comuna'] = "Sin Información"
     
     if nombre_col:
-        # Convertir a str primero para evitar el conflicto de Categorical
-        df['NombreComun'] = df[nombre_col].astype(str).str.strip().str.title()
-        df['NombreComun'] = df['NombreComun'].replace({'Nan': 'Especie No Especificada', 'None': 'Especie No Especificada', '': 'Especie No Especificada'})
+        df['NombreComun'] = df[nombre_col].fillna("Especie No Especificada").astype(str).str.strip().str.title()
     else:
         df['NombreComun'] = "Especie No Especificada"
 
     if origen_col:
-        df['TipoEvento'] = df[origen_col].astype(str).str.strip()
-        df['TipoEvento'] = df['TipoEvento'].replace({'Nan': 'Registro', 'None': 'Registro', '': 'Registro'})
+        df['TipoEvento'] = df[origen_col].fillna("Registro").astype(str).str.strip()
     else:
         df['TipoEvento'] = "Registro"
+
+    # 2. Reemplazar variaciones en texto que puedan pasar como nulos
+    reemplazos_nulos = {
+        'Nan': 'Especie No Especificada', 
+        'None': 'Especie No Especificada', 
+        '': 'Especie No Especificada',
+        'Null': 'Especie No Especificada',
+        'Sin Informacion': 'Especie No Especificada',
+        'Sin Información': 'Especie No Especificada'
+    }
+    df['NombreComun'] = df['NombreComun'].replace(reemplazos_nulos)
+
+    reemplazos_region = {'Nan': 'Sin Información', 'None': 'Sin Información', '': 'Sin Información', 'Null': 'Sin Información'}
+    df['Region'] = df['Region'].replace(reemplazos_region)
+    df['Comuna'] = df['Comuna'].replace(reemplazos_region)
     
     df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
     df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
