@@ -10,62 +10,69 @@ st.set_page_config(
     layout="wide"
 )
 
+# Diccionario de coordenadas de respaldo por comuna (Chile)
+COORDENADAS_COMUNAS = {
+    "Arica": (-18.4783, -70.3126), "Iquique": (-20.2133, -70.1503), "Antofagasta": (-23.6509, -70.3975),
+    "Calama": (-22.4544, -68.9294), "Copiapó": (-27.3668, -70.3323), "Vallenar": (-28.5751, -70.7581),
+    "La Serena": (-29.9027, -71.2520), "Coquimbo": (-29.9533, -71.3436), "Ovalle": (-30.5983, -71.2003),
+    "Valparaíso": (-33.0472, -71.6127), "Viña Del Mar": (-33.0245, -71.5518), "Quillota": (-32.8739, -71.2486),
+    "San Antonio": (-33.5938, -71.6076), "Santiago": (-33.4489, -70.6693), "Puente Alto": (-33.6117, -70.5758),
+    "Maipú": (-33.5112, -70.7580), "Melipilla": (-33.6853, -71.2144), "Rancagua": (-34.1701, -70.7444),
+    "San Fernando": (-34.5839, -70.9888), "Curicó": (-34.9828, -71.2394), "Talca": (-35.4264, -71.6554),
+    "Linares": (-35.8454, -71.5979), "Cauquenes": (-35.9670, -72.3158), "Chillán": (-36.6063, -72.1023),
+    "San Carlos": (-36.4242, -71.9581), "Concepción": (-36.8270, -73.0503), "Los Ángeles": (-37.4697, -72.3537),
+    "Chillan": (-36.6063, -72.1023), "San Pedro De La Paz": (-36.8406, -73.1022), "Talcahuano": (-36.7167, -73.1167),
+    "Temuco": (-38.7359, -72.5904), "Villarrica": (-39.2822, -72.2272), "Angol": (-37.7944, -72.7164),
+    "Valdivia": (-39.8142, -73.2459), "Osorno": (-40.5739, -73.1336), "Puerto Montt": (-41.4689, -72.9411),
+    "Puerto Varas": (-41.3195, -72.9854), "Castro": (-42.4721, -73.7732), "Ancud": (-41.8686, -73.8267),
+    "Coyhaique": (-45.5752, -72.0662), "Puerto Aysén": (-45.4058, -72.6936), "Punta Arenas": (-53.1638, -70.9171),
+    "Natales": (-51.7269, -72.5062), "Puerto Natales": (-51.7269, -72.5062), "Porvenir": (-53.2954, -70.3668)
+}
+
 @st.cache_data
 def load_data():
     df = pd.read_parquet("datos_bioexplora_light.parquet")
     
-    for col in df.columns:
-        if isinstance(df[col].dtype, pd.CategoricalDtype):
-            df[col] = df[col].astype(str)
-        else:
-            df[col] = df[col].astype(object)
-
+    # Normalizar nombres de columnas
     df.columns = [str(c).strip().lower() for c in df.columns]
     
     region_col = next((c for c in df.columns if 'region' in c), None)
     comuna_col = next((c for c in df.columns if 'comuna' in c), None)
     nombre_col = next((c for c in df.columns if 'nombre' in c or 'especie' in c or 'taxa' in c), None)
-    lat_col = next((c for c in df.columns if 'lat' in c), None)
-    lon_col = next((c for c in df.columns if 'lon' in c or 'lng' in c), None)
+    lat_col = next((c for c in df.columns if any(term in c for term in ['lat', 'y_coord', 'y'])), None)
+    lon_col = next((c for c in df.columns if any(term in c for term in ['lon', 'lng', 'x_coord', 'x'])), None)
     origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
 
-    if region_col:
-        df['Region'] = df[region_col].fillna("Sin Información").astype(str).str.strip().str.title()
-    else:
-        df['Region'] = "Sin Información"
-
-    if comuna_col:
-        df['Comuna'] = df[comuna_col].fillna("Sin Información").astype(str).str.strip().str.title()
-    else:
-        df['Comuna'] = "Sin Información"
-    
-    if nombre_col:
-        df['NombreComun'] = df[nombre_col].fillna("Especie No Especificada").astype(str).str.strip().str.title()
-    else:
-        df['NombreComun'] = "Especie No Especificada"
-
-    if origen_col:
-        df['TipoEvento'] = df[origen_col].fillna("Registro").astype(str).str.strip()
-    else:
-        df['TipoEvento'] = "Registro"
+    df['Region'] = df[region_col].fillna("Sin Información").astype(str).str.strip().str.title() if region_col else "Sin Información"
+    df['Comuna'] = df[comuna_col].fillna("Sin Información").astype(str).str.strip().str.title() if comuna_col else "Sin Información"
+    df['NombreComun'] = df[nombre_col].fillna("Especie No Especificada").astype(str).str.strip().str.title() if nombre_col else "Especie No Especificada"
+    df['TipoEvento'] = df[origen_col].fillna("Registro").astype(str).str.strip() if origen_col else "Registro"
 
     invalid_names = ['Nan', 'None', '', 'Null', 'Sin Informacion', 'Sin Información', '<Na>']
     df['NombreComun'] = df['NombreComun'].replace(invalid_names, 'Especie No Especificada')
     df['Region'] = df['Region'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Sin Información')
     df['Comuna'] = df['Comuna'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Sin Información')
-    df['TipoEvento'] = df['TipoEvento'].replace(['Nan', 'None', '', 'Null', '<Na>'], 'Registro')
     
-    # Garantizar conversión estricta a números flotantes
-    if lat_col:
-        df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce')
-    else:
-        df['Latitud'] = None
+    # Conversión numérica de coordenadas
+    df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
+    df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
+    
+    # Rellenar coordenadas faltantes usando la Comuna (Fallback Geográfico)
+    def asignar_lat(row):
+        if pd.notnull(row['Latitud']) and row['Latitud'] != 0:
+            return -abs(row['Latitud']) if abs(row['Latitud']) > 10 else row['Latitud']
+        comuna = row['Comuna']
+        return COORDENADAS_COMUNAS.get(comuna, (None, None))[0]
 
-    if lon_col:
-        df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce')
-    else:
-        df['Longitud'] = None
-    
+    def asignar_lon(row):
+        if pd.notnull(row['Longitud']) and row['Longitud'] != 0:
+            return -abs(row['Longitud']) if abs(row['Longitud']) > 10 else row['Longitud']
+        comuna = row['Comuna']
+        return COORDENADAS_COMUNAS.get(comuna, (None, None))[1]
+
+    df['Latitud'] = df.apply(asignar_lat, axis=1)
+    df['Longitud'] = df.apply(asignar_lon, axis=1)
+
     return df
 
 def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
@@ -89,13 +96,13 @@ def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
         
         folium.CircleMarker(
             location=[row['Latitud'], row['Longitud']],
-            radius=6,
+            radius=7,
             popup=folium.Popup(popup_txt, max_width=300),
-            tooltip=f"{row['NombreComun']} ({row['Comuna']})",
+            tooltip=f"{row['NombreComun']} - {row['Comuna']}",
             color=color_marker,
             fill=True,
             fill_color=color_marker,
-            fill_opacity=0.8
+            fill_opacity=0.85
         ).add_to(m)
 
     folium.LayerControl(position='topright').add_to(m)
@@ -109,7 +116,7 @@ try:
     
     tab1, tab2, tab3 = st.tabs(["📌 Mapa Geográfico", "📊 Estadísticas", "🔍 Buscador de Especies"])
 
-    # TAB 1: MAPA GEOGRÁFICO
+    # TAB 1: MAPA GEOGRÁFICO GENERAL
     with tab1:
         st.subheader("Filtros del Mapa")
         c_reg, c_est = st.columns(2)
@@ -125,9 +132,7 @@ try:
                 horizontal=True
             )
         
-        # Filtro de coordenadas válidas para Chile
         df_map = df.dropna(subset=['Latitud', 'Longitud'])
-        df_map = df_map[(df_map['Latitud'] < 0) & (df_map['Longitud'] < 0)]
         
         if selected_region != "Todas":
             df_map = df_map[df_map['Region'] == selected_region]
@@ -196,7 +201,7 @@ try:
                 fig_com.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
                 st.plotly_chart(fig_com, use_container_width=True)
 
-    # TAB 3: BUSCADOR OPTIMIZADO CON MAPA MEJORADO
+    # TAB 3: BUSCADOR CON GARANTÍA DE MAPA
     with tab3:
         st.subheader("Buscador y Ficha de Especie")
         
@@ -217,7 +222,7 @@ try:
                     )
                 else:
                     especie_seleccionada = None
-                    st.warning("No se encontraron especies específicas registradas con ese término.")
+                    st.warning("No se encontraron especies específicas con ese término.")
             
             if especie_seleccionada:
                 df_esp = df[df['NombreComun'] == especie_seleccionada]
@@ -239,26 +244,17 @@ try:
                 with col_b:
                     st.markdown("#### Ubicación de Avistamientos")
                     
-                    # Filtrar puntos válidos
                     df_esp_geo = df_esp.dropna(subset=['Latitud', 'Longitud'])
-                    df_esp_geo = df_esp_geo[(df_esp_geo['Latitud'] != 0) & (df_esp_geo['Longitud'] != 0)]
-                    
-                    # Si la latitud viene positiva por error de tipeo en los datos brutos, la corregimos automáticamente a negativa (Chile)
-                    df_esp_geo['Latitud'] = df_esp_geo['Latitud'].apply(lambda x: -abs(x) if abs(x) > 10 else x)
-                    df_esp_geo['Longitud'] = df_esp_geo['Longitud'].apply(lambda x: -abs(x) if abs(x) > 10 else x)
                     
                     if len(df_esp_geo) > 0:
-                        # Cálculo de centro y zoom adaptativo
                         lat_c = df_esp_geo['Latitud'].mean()
                         lon_c = df_esp_geo['Longitud'].mean()
-                        
-                        # Si hay pocos puntos (o 1 solo), hacer zoom cercano (10); si son muchos, zoom general (6)
-                        zoom_dinamico = 10 if len(df_esp_geo) <= 3 else 6
+                        zoom_dinamico = 9 if len(df_esp_geo) <= 3 else 6
                         
                         mapa_esp = crear_mapa_folium(df_esp_geo, lat_c, lon_c, zoom_dinamico)
                         st_folium(mapa_esp, use_container_width=True, height=450, returned_objects=[])
                     else:
-                        st.info("⚠️ Este registro no posee coordenadas numéricas exactas en la base original, pero la presencia registrada corresponde a la comuna listada a la izquierda.")
+                        st.warning("No fue posible ubicar geográficamente esta comuna.")
 
                 st.markdown("---")
                 st.markdown("#### Detalle de Registros Encontrados")
