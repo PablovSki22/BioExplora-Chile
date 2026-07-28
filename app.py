@@ -10,24 +10,32 @@ st.set_page_config(
 
 @st.cache_data
 def load_data():
-    # Leer el archivo liviano ya preprocesado
+    # Leer el archivo liviano preprocesado
     df = pd.read_parquet("datos_bioexplora_light.parquet")
     
-    # Estandarizar nombres por seguridad
-    cols = {col: col.strip().lower() for col in df.columns}
-    df = df.rename(columns=cols)
+    # Estandarizar nombres de columnas a minúsculas y sin espacios
+    df.columns = [str(c).strip().lower() for c in df.columns]
     
+    # Mapear columnas dinámicamente
     region_col = next((c for c in df.columns if 'region' in c), None)
     comuna_col = next((c for c in df.columns if 'comuna' in c), None)
-    nombre_col = next((c for c in df.columns if 'nombre' in c or 'especie' in c), None)
+    nombre_col = next((c for c in df.columns if 'nombre' in c or 'especie' in c or 'taxa' in c), None)
     lat_col = next((c for c in df.columns if 'lat' in c), None)
     lon_col = next((c for c in df.columns if 'lon' in c or 'lng' in c), None)
     origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
 
+    # Limpieza y formateo de texto
     df['Region'] = df[region_col].astype(str).str.strip().str.title() if region_col else "Sin Información"
     df['Comuna'] = df[comuna_col].astype(str).str.strip().str.title() if comuna_col else "Sin Información"
-    df['NombreComun'] = df[nombre_col].astype(str).str.strip().str.title() if nombre_col else "Sin Información"
-    df['TipoEvento'] = df[origen_col].astype(str).str.strip() if origen_col else "Registro"
+    
+    if nombre_col:
+        df['NombreComun'] = df[nombre_col].fillna("Especie no especificada").astype(str).str.strip().str.title()
+        df['NombreComun'] = df['NombreComun'].replace({'Nan': 'Especie no especificada', 'None': 'Especie no especificada', '': 'Especie no especificada'})
+    else:
+        df['NombreComun'] = "Especie no especificada"
+
+    df['TipoEvento'] = df[origen_col].fillna("Registro").astype(str).str.strip() if origen_col else "Registro"
+    df['TipoEvento'] = df['TipoEvento'].replace({'Nan': 'Registro', 'None': 'Registro', '': 'Registro'})
     
     df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
     df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
@@ -62,7 +70,7 @@ try:
                 lon="Longitud",
                 color="TipoEvento",
                 hover_name="NombreComun",
-                hover_data=["Comuna", "Region"],
+                hover_data={"Region": True, "Comuna": True, "Latitud": ":.4f", "Longitud": ":.4f", "TipoEvento": True},
                 scope="south america",
                 height=600
             )
@@ -73,13 +81,14 @@ try:
         st.subheader("Métricas Generales")
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Registros", f"{len(df):,}")
-        col2.metric("Especies Distintas", f"{df['NombreComun'].nunique():,}")
+        col2.metric("Especies Distintas", f"{df[df['NombreComun'] != 'Especie no especificada']['NombreComun'].nunique():,}")
         col3.metric("Comunas Cubiertas", f"{df['Comuna'].nunique():,}")
         
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("### Top 10 Especies Más Frecuentes")
-            st.dataframe(df['NombreComun'].value_counts().head(10), use_container_width=True)
+            top_esp = df[df['NombreComun'] != 'Especie no especificada']['NombreComun'].value_counts().head(10)
+            st.dataframe(top_esp if not top_esp.empty else "No hay especies catalogadas", use_container_width=True)
         with c2:
             st.markdown("### Top 10 Comunas con Mayor Actividad")
             st.dataframe(df['Comuna'].value_counts().head(10), use_container_width=True)
@@ -107,7 +116,7 @@ try:
                             lon="Longitud",
                             color="TipoEvento",
                             hover_name="NombreComun",
-                            hover_data=["Comuna", "Region"],
+                            hover_data={"Region": True, "Comuna": True, "TipoEvento": True},
                             scope="south america",
                             height=500
                         )
