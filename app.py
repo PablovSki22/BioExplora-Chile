@@ -5,6 +5,8 @@ import folium
 from streamlit_folium import st_folium
 import requests
 import hashlib
+from PIL import Image
+from PIL.ExifTags import TAGS, GPSTAGS
 
 st.set_page_config(
     page_title="BioExplora Chile",
@@ -31,6 +33,14 @@ if "bd_usuarios" not in st.session_state:
         "admin@bioexplora.cl": hashlib.sha256("123456".encode()).hexdigest()
     }
 
+if "perfiles_usuarios" not in st.session_state:
+    st.session_state.perfiles_usuarios = {
+        "admin@bioexplora.cl": {
+            "nombre": "Administrador",
+            "bio": "Gestor oficial del portal BioExplora Chile."
+        }
+    }
+
 if "conteo_avistamientos" not in st.session_state:
     st.session_state.conteo_avistamientos = {
         "admin@bioexplora.cl": 12
@@ -43,6 +53,11 @@ if is_logged_in_google:
     st.session_state.tipo_acceso = "Registrado"
     if google_email not in st.session_state.conteo_avistamientos:
         st.session_state.conteo_avistamientos[google_email] = 0
+    if google_email not in st.session_state.perfiles_usuarios:
+        st.session_state.perfiles_usuarios[google_email] = {
+            "nombre": google_email.split("@")[0].title(),
+            "bio": "Entusiasta de la biodiversidad chilena."
+        }
 elif "autenticado" not in st.session_state:
     st.session_state.autenticado = False
     st.session_state.usuario_actual = None
@@ -60,6 +75,43 @@ def obtener_rango_usuario(cantidad):
         return "🥾 Explorador de Campo", "blue"
     else:
         return "🐣 Observador Inicial", "gray"
+
+# --- EXTRACCIÓN DE GPS DE IMÁGENES (EXIF) ---
+def obtener_coordenadas_exif(image_file):
+    try:
+        image = Image.open(image_file)
+        exif_data = image._getexif()
+        if not exif_data:
+            return None, None
+
+        gps_info = {}
+        for tag_id, value in exif_data.items():
+            tag = TAGS.get(tag_id, tag_id)
+            if tag == "GPSInfo":
+                for t in value:
+                    sub_tag = GPSTAGS.get(t, t)
+                    gps_info[sub_tag] = value[t]
+
+        if not gps_info:
+            return None, None
+
+        def convertir_a_grados(valor_gps):
+            d = float(valor_gps[0])
+            m = float(valor_gps[1])
+            s = float(valor_gps[2])
+            return d + (m / 60.0) + (s / 3600.0)
+
+        lat = convertir_a_grados(gps_info['GPSLatitude'])
+        if gps_info.get('GPSLatitudeRef') != 'N':
+            lat = -lat
+
+        lon = convertir_a_grados(gps_info['GPSLongitude'])
+        if gps_info.get('GPSLongitudeRef') != 'E':
+            lon = -lon
+
+        return lat, lon
+    except Exception:
+        return None, None
 
 # --- DICCIONARIOS DE MAPPING ---
 COORDENADAS_COMUNAS = {
@@ -165,12 +217,15 @@ def load_base_data():
     return df
 
 if "df_nuevos_registros" not in st.session_state:
-    st.session_state.df_nuevos_registros = pd.DataFrame(columns=['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud'])
+    st.session_state.df_nuevos_registros = pd.DataFrame(columns=['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud', 'AportadoPor'])
 
 def get_complete_data():
     base_df = load_base_data()
     if not st.session_state.df_nuevos_registros.empty:
-        return pd.concat([base_df, st.session_state.df_nuevos_registros], ignore_index=True)
+        # Asegurarnos de usar solo las columnas requeridas para evitar warnings de concat
+        cols_base = ['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud']
+        df_clean_nuevos = st.session_state.df_nuevos_registros[cols_base]
+        return pd.concat([base_df, df_clean_nuevos], ignore_index=True)
     return base_df
 
 @st.cache_data(ttl=3600)
@@ -269,7 +324,6 @@ def mostrar_pantalla_login():
                     st.login("google")
                 except Exception as err:
                     st.error(f"⚠️ Error al redireccionar a Google: {err}")
-                    st.info("Verifique que los secrets en Streamlit Cloud tengan su ID y Secret reales de Google.")
 
         with tab_registro:
             st.subheader("Crear una nueva cuenta")
@@ -287,6 +341,10 @@ def mostrar_pantalla_login():
                 else:
                     st.session_state.bd_usuarios[nuevo_email] = hash_pass(nuevo_pass)
                     st.session_state.conteo_avistamientos[nuevo_email] = 0
+                    st.session_state.perfiles_usuarios[nuevo_email] = {
+                        "nombre": nuevo_email.split("@")[0].title(),
+                        "bio": "Entusiasta de la naturaleza."
+                    }
                     st.success("¡Cuenta creada exitosamente! Ya puede iniciar sesión.")
 
         with tab_invitado:
@@ -300,12 +358,16 @@ def mostrar_pantalla_login():
 
 # --- APLICACIÓN PRINCIPAL ---
 def mostrar_aplicacion_principal():
+    usr_actual = st.session_state.usuario_actual
+    perfil_actual = st.session_state.perfiles_usuarios.get(usr_actual, {"nombre": usr_actual, "bio": "Sin biografía"})
+
     with st.sidebar:
-        st.markdown(f"👤 **Usuario:** `{st.session_state.usuario_actual}`")
+        st.markdown(f"👤 **Nombre:** `{perfil_actual.get('nombre')}`")
+        st.markdown(f"📧 **Cuenta:** `{usr_actual}`")
         st.markdown(f"🏷️ **Perfil:** `{st.session_state.tipo_acceso}`")
         
         if st.session_state.tipo_acceso == "Registrado":
-            cant_obs = st.session_state.conteo_avistamientos.get(st.session_state.usuario_actual, 0)
+            cant_obs = st.session_state.conteo_avistamientos.get(usr_actual, 0)
             rango, color_badge = obtener_rango_usuario(cant_obs)
             st.markdown("---")
             st.markdown("### 🏅 Tu Reputación")
@@ -314,7 +376,7 @@ def mostrar_aplicacion_principal():
             st.progress(min(cant_obs / 15, 1.0))
         else:
             st.markdown("---")
-            st.info("💡 Regístrate para sumar puntos y desbloquear rangos al aportar avistamientos.")
+            st.info("💡 Regístrate para personalizar tu perfil, sumar puntos y desbloquear rangos.")
 
         st.markdown("---")
         if st.button("🚪 Cerrar Sesión", use_container_width=True):
@@ -333,12 +395,21 @@ def mostrar_aplicacion_principal():
     try:
         df = get_complete_data()
         
-        tab1, tab2, tab3, tab4 = st.tabs([
+        tabs_lista = [
             "📌 Mapa Geográfico", 
             "📊 Estadísticas", 
             "🔍 Buscador de Especies",
             "📝 Reportar Avistamiento"
-        ])
+        ]
+        if st.session_state.tipo_acceso == "Registrado":
+            tabs_lista.append("⚙️ Mi Perfil")
+
+        tabs_creados = st.tabs(tabs_lista)
+        tab1 = tabs_creados[0]
+        tab2 = tabs_creados[1]
+        tab3 = tabs_creados[2]
+        tab4 = tabs_creados[3]
+        tab_perfil = tabs_creados[4] if len(tabs_creados) > 4 else None
 
         with tab1:
             st.subheader("Filtros del Mapa")
@@ -462,7 +533,7 @@ def mostrar_aplicacion_principal():
             if st.session_state.tipo_acceso == "Invitado":
                 st.warning("🔒 Los invitados están en modo sólo lectura. Para ingresar datos y subir de nivel, por favor cierra sesión e inicia sesión con una cuenta de usuario.")
             else:
-                st.markdown("Completa los datos del avistamiento para contribuir a la base científica y subir en el ranking de exploradores.")
+                st.markdown("Sube una foto del avistamiento (**con GPS activado en tu cámara**) o indica la comuna. Las coordenadas se extraerán automáticamente de la imagen si están disponibles.")
                 
                 with st.form("form_avistamiento"):
                     col_f1, col_f2 = st.columns(2)
@@ -474,8 +545,7 @@ def mostrar_aplicacion_principal():
                         input_comuna = st.text_input("Comuna:", placeholder="Ej: San Pablo, Hualpén")
                         
                     with col_f2:
-                        input_lat = st.number_input("Latitud (opcional, ej: -40.4042):", value=0.0, format="%.4f")
-                        input_lon = st.number_input("Longitud (opcional, ej: -73.0308):", value=0.0, format="%.4f")
+                        foto_avistamiento = st.file_uploader("📷 Subir Fotografía (Extrae GPS automático)", type=["jpg", "jpeg", "png"])
                         input_notas = st.text_area("Notas / Observaciones de campo:", placeholder="Ej: Observado cerca de estero al atardecer.")
                     
                     btn_guardar = st.form_submit_button("🚀 Publicar Avistamiento", type="primary", use_container_width=True)
@@ -487,8 +557,20 @@ def mostrar_aplicacion_principal():
                             nom_especie_limpio = input_especie.strip().title()
                             comuna_limpia = input_comuna.strip().title()
                             
-                            lat_final = input_lat if input_lat != 0.0 else COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[0]
-                            lon_final = input_lon if input_lon != 0.0 else COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[1]
+                            # Intentar sacar coordenadas de la foto (EXIF)
+                            lat_exif, lon_exif = None, None
+                            if foto_avistamiento is not None:
+                                lat_exif, lon_exif = obtener_coordenadas_exif(foto_avistamiento)
+
+                            if lat_exif and lon_exif:
+                                lat_final, lon_final = lat_exif, lon_exif
+                                st.success("📍 ¡Ubicación GPS extraída exitosamente de la fotografía!")
+                            else:
+                                # Respaldo por comuna o región si la foto no trae GPS
+                                lat_final = COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[0]
+                                lon_final = COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[1]
+                                if foto_avistamiento is not None:
+                                    st.info("ℹ️ La foto no contenía datos GPS; se usaron las coordenadas referenciales de la comuna.")
                             
                             nuevo_registro = pd.DataFrame([{
                                 'Region': input_region,
@@ -496,16 +578,45 @@ def mostrar_aplicacion_principal():
                                 'NombreComun': nom_especie_limpio,
                                 'TipoEvento': 'Aporte Comunitario',
                                 'Latitud': lat_final,
-                                'Longitud': lon_final
+                                'Longitud': lon_final,
+                                'AportadoPor': usr_actual
                             }])
                             
                             st.session_state.df_nuevos_registros = pd.concat([st.session_state.df_nuevos_registros, nuevo_registro], ignore_index=True)
                             
-                            usr = st.session_state.usuario_actual
-                            st.session_state.conteo_avistamientos[usr] = st.session_state.conteo_avistamientos.get(usr, 0) + 1
+                            st.session_state.conteo_avistamientos[usr_actual] = st.session_state.conteo_avistamientos.get(usr_actual, 0) + 1
                             
                             st.balloons()
-                            st.success(f"¡Avistamiento registrado con éxito! Tu nuevo total de aportes es {st.session_state.conteo_avistamientos[usr]}.")
+                            st.success(f"¡Avistamiento registrado con éxito! Tu nuevo total de aportes es {st.session_state.conteo_avistamientos[usr_actual]}.")
+
+        if tab_perfil and st.session_state.tipo_acceso == "Registrado":
+            with tab_perfil:
+                st.subheader("⚙️ Configuración y Personalización del Perfil")
+                
+                with st.form("form_perfil"):
+                    nuevo_nombre_publico = st.text_input("Nombre Público / Alias:", value=perfil_actual.get("nombre", ""))
+                    nueva_bio = st.text_area("Biografía o Descripción personal:", value=perfil_actual.get("bio", ""))
+                    
+                    btn_guardar_perfil = st.form_submit_button("💾 Guardar Cambios de Perfil", type="primary")
+                    
+                    if btn_guardar_perfil:
+                        st.session_state.perfiles_usuarios[usr_actual] = {
+                            "nombre": nuevo_nombre_publico.strip() or usr_actual,
+                            "bio": nueva_bio.strip()
+                        }
+                        st.success("¡Perfil actualizado correctamente!")
+                        st.rerun()
+
+                st.markdown("---")
+                st.markdown("### 📋 Tus Avistamientos Realizados")
+                if not st.session_state.df_nuevos_registros.empty and 'AportadoPor' in st.session_state.df_nuevos_registros.columns:
+                    mis_aportes = st.session_state.df_nuevos_registros[st.session_state.df_nuevos_registros['AportadoPor'] == usr_actual]
+                    if not mis_aportes.empty:
+                        st.dataframe(mis_aportes[['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud']], use_container_width=True)
+                    else:
+                        st.info("Aún no has registrado aportes comunitarios.")
+                else:
+                    st.info("Aún no has registrado aportes comunitarios.")
 
     except Exception as e:
         st.error(f"Error en la aplicación: {e}")
