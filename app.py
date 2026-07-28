@@ -12,10 +12,16 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- BASE DE DATOS FICTICIA / TEMPORAL DE USUARIOS ---
+# --- INICIALIZACIÓN DE ESTADOS ---
 if "bd_usuarios" not in st.session_state:
     st.session_state.bd_usuarios = {
         "admin@bioexplora.cl": hashlib.sha256("123456".encode()).hexdigest()
+    }
+
+# Registro de avistamientos por usuario para calcular su reputación/rango
+if "conteo_avistamientos" not in st.session_state:
+    st.session_state.conteo_avistamientos = {
+        "admin@bioexplora.cl": 12
     }
 
 if "autenticado" not in st.session_state:
@@ -27,6 +33,16 @@ if "tipo_acceso" not in st.session_state:
 
 def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
+
+def obtener_rango_usuario(cantidad):
+    if cantidad >= 11:
+        return "🏆 Naturalista Experto", "gold"
+    elif cantidad >= 6:
+        return "🌿 Rastreador de Biodiversidad", "green"
+    elif cantidad >= 3:
+        return "🥾 Explorador de Campo", "blue"
+    else:
+        return "🐣 Observador Inicial", "gray"
 
 # --- DICCIONARIOS DE MAPPING ---
 COORDENADAS_COMUNAS = {
@@ -65,50 +81,16 @@ MAPEO_NOMBRES_CIENTIFICOS = {
     "ranita de antifaz": "Batrachyla taeniata",
     "ranita antifaz": "Batrachyla taeniata",
     "ranita de hojarasca": "Batrachyla leptopus",
-    "ranita de hojarasca de calcarata": "Eupsophus calcaratus",
     "sapito 4 ojos": "Pleurodema thaul",
-    "sapito cuatro ojos": "Pleurodema thaul",
-    "sapito de cuatro ojos": "Pleurodema thaul",
     "ranita de darwin": "Rhinoderma darwinii",
-    "sapo de rhensu": "Insuetophrynus acarpicus",
-    "sapo de atacama": "Rhinella atacamensis",
-    "sapo espinoso": "Rhinella spinulosa",
-    "rana chilena": "Calyptocephalella gayi",
     "zorro culpeo": "Lycalopex culpaeus",
-    "zorro chilla": "Lycalopex griseus",
-    "zorro de darwin": "Lycalopex fulvipes",
     "puma": "Puma concolor",
     "huemul": "Hippocamelus bisulcus",
     "pudú": "Pudu puda",
-    "pudu": "Pudu puda",
-    "monito del monte": "Dromiciops gliroides",
-    "guanaco": "Lama guanicoe",
-    "vicuña": "Vicugna vicugna",
-    "chinchilla cordillerana": "Chinchilla chinchilla",
-    "taruca": "Hippocamelus antisensis",
-    "gato colocolo": "Leopardus colocolo",
-    "guiña": "Leopardus guigna",
     "cóndor andino": "Vultur gryphus",
-    "condor andino": "Vultur gryphus",
     "condor": "Vultur gryphus",
-    "flamenco chileno": "Phoenicopterus chilensis",
-    "carpintero negro": "Campephilus magellanicus",
-    "pingüino de humboldt": "Spheniscus humboldti",
-    "pinguino de humboldt": "Spheniscus humboldti",
-    "pingüino de magallanes": "Spheniscus magellanicus",
     "loica": "Leistes loyca",
-    "chucao": "Scelorchilus rubecula",
-    "hued-hued": "Pteroptochos castaneus",
-    "rayadito": "Aphrastura spinicauda",
-    "lagartija esbelta": "Liolaemus tenuis",
-    "lagartija nítida": "Liolaemus nitidus",
-    "culebra de cola larga": "Philodryas chamissonis",
-    "araucaria": "Araucaria araucana",
-    "copihue": "Lapageria rosea",
-    "litre": "Lithraea caustica",
-    "alerce": "Fitzroya cupressoides",
-    "quillay": "Quillaja saponaria",
-    "peumo": "Cryptocarya alba"
+    "chucao": "Scelorchilus rubecula"
 }
 
 def obtener_nombre_cientifico_resuelto(nombre_ingresado):
@@ -118,7 +100,7 @@ def obtener_nombre_cientifico_resuelto(nombre_ingresado):
     return MAPEO_NOMBRES_CIENTIFICOS.get(limpio, nombre_ingresado)
 
 @st.cache_data
-def load_data():
+def load_base_data():
     df_raw = pd.read_parquet("datos_bioexplora_light.parquet")
     df = pd.DataFrame()
     for col in df_raw.columns:
@@ -165,6 +147,16 @@ def load_data():
 
     return df
 
+# Carga de datos unificada con las adiciones del usuario en vivo
+if "df_nuevos_registros" not in st.session_state:
+    st.session_state.df_nuevos_registros = pd.DataFrame(columns=['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud'])
+
+def get_complete_data():
+    base_df = load_base_data()
+    if not st.session_state.df_nuevos_registros.empty:
+        return pd.concat([base_df, st.session_state.df_nuevos_registros], ignore_index=True)
+    return base_df
+
 @st.cache_data(ttl=3600)
 def obtener_datos_gbif(nombre_especie):
     nombre_query = obtener_nombre_cientifico_resuelto(nombre_especie)
@@ -196,30 +188,6 @@ def obtener_datos_gbif(nombre_especie):
                             if m.get('type') == 'StillImage' and 'identifier' in m:
                                 imagen_url = m['identifier']
                                 break
-
-        inat_url = f"https://api.inaturalist.org/v1/taxa?q={nombre_query}&per_page=1"
-        inat_res = requests.get(inat_url, timeout=4)
-        if inat_res.status_code == 200:
-            inat_data = inat_res.json().get('results', [])
-            if inat_data:
-                taxon_obj = inat_data[0]
-                if not imagen_url and 'default_photo' in taxon_obj:
-                    photo_info = taxon_obj['default_photo']
-                    if photo_info and 'medium_url' in photo_info:
-                        imagen_url = photo_info['medium_url']
-                if not taxonomia:
-                    ancestors = taxon_obj.get('ancestors', [])
-                    tax_map = {a.get('rank'): a.get('name') for a in ancestors}
-                    tax_map[taxon_obj.get('rank')] = taxon_obj.get('name')
-                    taxonomia = {
-                        "Reino": tax_map.get("kingdom", "Animalia"),
-                        "Filo": tax_map.get("phylum", "Chordata"),
-                        "Clase": tax_map.get("class", "Desconocido"),
-                        "Orden": tax_map.get("order", "Desconocido"),
-                        "Familia": tax_map.get("family", "Desconocido"),
-                        "Género": tax_map.get("genus", "Desconocido"),
-                        "Nombre Científico": taxon_obj.get("name", nombre_query)
-                    }
     except Exception:
         pass
     return taxonomia, imagen_url
@@ -235,7 +203,7 @@ def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
     ).add_to(m)
 
     for _, row in df_puntos.iterrows():
-        color_marker = "green" if row.get("TipoEvento") == "Monitoreo" else "orange"
+        color_marker = "green" if row.get("TipoEvento") == "Monitoreo" else ("purple" if row.get("TipoEvento") == "Aporte Comunitario" else "orange")
         popup_txt = f"<b>Especie:</b> {row['NombreComun']}<br><b>Región:</b> {row['Region']}<br><b>Comuna:</b> {row['Comuna']}<br><b>Tipo:</b> {row['TipoEvento']}"
         folium.CircleMarker(
             location=[row['Latitud'], row['Longitud']],
@@ -303,7 +271,8 @@ def mostrar_pantalla_login():
                     st.warning("Este correo ya se encuentra registrado.")
                 else:
                     st.session_state.bd_usuarios[nuevo_email] = hash_pass(nuevo_pass)
-                    st.success("¡Cuenta creada exitosamente! Ya puede iniciar sesión en la pestaña superior.")
+                    st.session_state.conteo_avistamientos[nuevo_email] = 0
+                    st.success("¡Cuenta creada exitosamente! Ya puede iniciar sesión.")
 
         with tab_invitado:
             st.subheader("Acceso Rápido")
@@ -319,6 +288,20 @@ def mostrar_aplicacion_principal():
     with st.sidebar:
         st.markdown(f"👤 **Usuario:** `{st.session_state.usuario_actual}`")
         st.markdown(f"🏷️ **Perfil:** `{st.session_state.tipo_acceso}`")
+        
+        # Sistema de Gamificación / Nivel del Usuario
+        if st.session_state.tipo_acceso == "Registrado":
+            cant_obs = st.session_state.conteo_avistamientos.get(st.session_state.usuario_actual, 0)
+            rango, color_badge = obtener_rango_usuario(cant_obs)
+            st.markdown("---")
+            st.markdown("### 🏅 Tu Reputación")
+            st.markdown(f"**Rango:** {rango}")
+            st.markdown(f"**Avistamientos aportados:** `{cant_obs}`")
+            st.progress(min(cant_obs / 15, 1.0))
+        else:
+            st.markdown("---")
+            st.info("💡 Regístrate para sumar puntos y desbloquear rangos de especialista al aportar avistamientos.")
+
         st.markdown("---")
         if st.button("🚪 Cerrar Sesión", use_container_width=True):
             st.session_state.autenticado = False
@@ -327,12 +310,16 @@ def mostrar_aplicacion_principal():
             st.rerun()
 
     st.title("🌿 BioExplora Chile: Portal de Biodiversidad")
-    st.markdown("Visualizador interactivo de monitoreo y rescates a nivel nacional.")
 
     try:
-        df = load_data()
+        df = get_complete_data()
         
-        tab1, tab2, tab3 = st.tabs(["📌 Mapa Geográfico", "📊 Estadísticas", "🔍 Buscador de Especies"])
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "📌 Mapa Geográfico", 
+            "📊 Estadísticas", 
+            "🔍 Buscador de Especies",
+            "📝 Reportar Avistamiento"
+        ])
 
         with tab1:
             st.subheader("Filtros del Mapa")
@@ -350,7 +337,6 @@ def mostrar_aplicacion_principal():
                 )
             
             df_map = df.dropna(subset=['Latitud', 'Longitud'])
-            
             if selected_region != "Todas":
                 df_map = df_map[df_map['Region'] == selected_region]
                 
@@ -367,7 +353,7 @@ def mostrar_aplicacion_principal():
                 zoom_level = 4 if selected_region == "Todas" else 7
 
                 mapa = crear_mapa_folium(df_map, lat_center, lon_center, zoom_level)
-                st_folium(mapa, use_container_width=True, height=650, returned_objects=[])
+                st_folium(mapa, use_container_width=True, height=600, returned_objects=[])
             else:
                 st.warning("No hay registros que coincidan con los filtros seleccionados.")
                 
@@ -388,15 +374,10 @@ def mostrar_aplicacion_principal():
                 
                 if not df_esp_chart.empty:
                     fig_esp = px.bar(
-                        df_esp_chart,
-                        x='Cantidad',
-                        y='Especie',
-                        orientation='h',
-                        color='Cantidad',
-                        color_continuous_scale='Greens',
-                        text_auto=True
+                        df_esp_chart, x='Cantidad', y='Especie',
+                        orientation='h', color='Cantidad', color_continuous_scale='Greens', text_auto=True
                     )
-                    fig_esp.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
+                    fig_esp.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=400)
                     st.plotly_chart(fig_esp, use_container_width=True)
 
             with c2:
@@ -406,20 +387,14 @@ def mostrar_aplicacion_principal():
                 
                 if not df_com_chart.empty:
                     fig_com = px.bar(
-                        df_com_chart,
-                        x='Cantidad',
-                        y='Comuna',
-                        orientation='h',
-                        color='Cantidad',
-                        color_continuous_scale='Teal',
-                        text_auto=True
+                        df_com_chart, x='Cantidad', y='Comuna',
+                        orientation='h', color='Cantidad', color_continuous_scale='Teal', text_auto=True
                     )
-                    fig_com.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
+                    fig_com.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=400)
                     st.plotly_chart(fig_com, use_container_width=True)
 
         with tab3:
             st.subheader("Buscador y Ficha de Especie")
-            
             col_search1, col_search2 = st.columns([1, 1])
             
             with col_search1:
@@ -431,29 +406,25 @@ def mostrar_aplicacion_principal():
                 
                 with col_search2:
                     if especies_halladas:
-                        especie_seleccionada = st.selectbox(
-                            "2. Seleccione la especie exacta encontrada:",
-                            especies_halladas
-                        )
+                        especie_seleccionada = st.selectbox("2. Seleccione la especie exacta encontrada:", especies_halladas)
                     else:
                         especie_seleccionada = None
-                        st.warning("No se encontraron especies específicas con ese término.")
+                        st.warning("No se encontraron especies específicas.")
                 
                 if especie_seleccionada:
                     df_esp = df[df['NombreComun'] == especie_seleccionada]
-                    st.success(f"Mostrando información para **{especie_seleccionada}** ({len(df_esp):,} registros hallados).")
+                    st.success(f"Mostrando información para **{especie_seleccionada}** ({len(df_esp):,} registros).")
                     
                     st.markdown("---")
                     st.markdown("### 🧬 Ficha Taxonómica y Registro Fotográfico")
                     tax, img_url = obtener_datos_gbif(especie_seleccionada)
                     
                     col_info_a, col_info_b = st.columns([1, 1])
-                    
                     with col_info_a:
                         if img_url:
-                            st.image(img_url, caption=f"Fotografía de referencia: {especie_seleccionada}", use_container_width=True)
+                            st.image(img_url, caption=f"Fotografía: {especie_seleccionada}", use_container_width=True)
                         else:
-                            st.info("📷 No se encontró fotografía pública registrada para esta especie.")
+                            st.info("📷 No hay fotografía disponible.")
                             
                     with col_info_b:
                         if tax:
@@ -463,44 +434,64 @@ def mostrar_aplicacion_principal():
                             st.markdown(f"• **Clase:** {tax.get('Clase')}")
                             st.markdown(f"• **Orden:** {tax.get('Orden')}")
                             st.markdown(f"• **Familia:** {tax.get('Familia')}")
-                            st.markdown(f"• **Género:** {tax.get('Género')}")
                         else:
-                            st.write("Sin datos taxonómicos externos disponibles.")
-                    st.markdown("---")
-                    
-                    col_a, col_b = st.columns([1, 2])
-                    
-                    with col_a:
-                        st.markdown("#### Presencia por Comuna")
-                        df_comuna_esp = df_esp['Comuna'].value_counts().reset_index()
-                        df_comuna_esp.columns = ['Comuna', 'Registros']
-                        st.dataframe(df_comuna_esp, use_container_width=True, height=200)
-                        
-                        st.markdown("#### Distribución por Región")
-                        df_reg_esp = df_esp['Region'].value_counts().reset_index()
-                        df_reg_esp.columns = ['Región', 'Registros']
-                        st.dataframe(df_reg_esp, use_container_width=True, height=180)
+                            st.write("Sin datos taxonómicos externos.")
 
-                    with col_b:
-                        st.markdown("#### Ubicación de Avistamientos")
-                        df_esp_geo = df_esp.dropna(subset=['Latitud', 'Longitud'])
+        with tab4:
+            st.subheader("📝 Registrar un Nuevo Avistamiento de Biodiversidad")
+            
+            # Verificación de permisos según el perfil
+            if st.session_state.tipo_acceso == "Invitado":
+                st.warning("🔒 Los invitados están en modo sólo lectura. Para ingresar datos y subir de nivel, por favor cierra sesión e inicia sesión con una cuenta de usuario.")
+            else:
+                st.markdown("Completa los datos del avistamiento para contribuir a la base científica y subir en el ranking de exploradores.")
+                
+                with st.form("form_avistamiento"):
+                    col_f1, col_f2 = st.columns(2)
+                    
+                    with col_f1:
+                        input_especie = st.text_input("Especie observada (Nombre común o científico):", placeholder="Ej: Ranita de Antafaz, Pudú, Cóndor")
+                        lista_regiones = sorted(list(COORDENADAS_REGIONES.keys()))
+                        input_region = st.selectbox("Región:", lista_regiones)
+                        input_comuna = st.text_input("Comuna:", placeholder="Ej: San Pablo, Hualpén")
                         
-                        if len(df_esp_geo) > 0:
-                            lat_c = df_esp_geo['Latitud'].mean()
-                            lon_c = df_esp_geo['Longitud'].mean()
-                            zoom_dinamico = 9 if len(df_esp_geo) <= 3 else 6
+                    with col_f2:
+                        input_lat = st.number_input("Latitud (opcional, ej: -40.4042):", value=0.0, format="%.4f")
+                        input_lon = st.number_input("Longitud (opcional, ej: -73.0308):", value=0.0, format="%.4f")
+                        input_notas = st.text_area("Notas / Observaciones de campo:", placeholder="Ej: Observado cerca de estero al atardecer.")
+                    
+                    btn_guardar = st.form_submit_button("🚀 Publicar Avistamiento", type="primary", use_container_width=True)
+                    
+                    if btn_guardar:
+                        if not input_especie.strip() or not input_comuna.strip():
+                            st.error("Por favor completa al menos la especie y la comuna.")
+                        else:
+                            nom_especie_limpio = input_especie.strip().title()
+                            comuna_limpia = input_comuna.strip().title()
                             
-                            mapa_esp = crear_mapa_folium(df_esp_geo, lat_c, lon_c, zoom_dinamico)
-                            st_folium(mapa_esp, use_container_width=True, height=450, returned_objects=[])
-                        else:
-                            st.warning("No fue posible ubicar geográficamente este registro.")
-
-                    st.markdown("#### Detalle de Registros Encontrados")
-                    cols_mostrar = [c for c in ['NombreComun', 'Region', 'Comuna', 'TipoEvento', 'Latitud', 'Longitud'] if c in df_esp.columns]
-                    st.dataframe(df_esp[cols_mostrar], use_container_width=True)
+                            # Asignación de coordenadas por defecto si no ingresa lat/lon explícita
+                            lat_final = input_lat if input_lat != 0.0 else COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[0]
+                            lon_final = input_lon if input_lon != 0.0 else COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[1]
+                            
+                            nuevo_registro = pd.DataFrame([{
+                                'Region': input_region,
+                                'Comuna': comuna_limpia,
+                                'NombreComun': nom_especie_limpio,
+                                'TipoEvento': 'Aporte Comunitario',
+                                'Latitud': lat_final,
+                                'Longitud': lon_final
+                            }])
+                            
+                            st.session_state.df_nuevos_registros = pd.concat([st.session_state.df_nuevos_registros, nuevo_registro], ignore_index=True)
+                            
+                            usr = st.session_state.usuario_actual
+                            st.session_state.conteo_avistamientos[usr] = st.session_state.conteo_avistamientos.get(usr, 0) + 1
+                            
+                            st.balloons()
+                            st.success(f"¡Avistamiento registrado con éxito! Tu nuevo total de aportes es {st.session_state.conteo_avistamientos[usr]}.")
 
     except Exception as e:
-        st.error(f"Error al cargar la base de datos: {e}")
+        st.error(f"Error en la aplicación: {e}")
 
 # --- ENRUTADOR PRINCIPAL ---
 if st.session_state.autenticado:
