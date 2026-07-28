@@ -12,7 +12,22 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- INICIALIZACIÓN DE ESTADOS ---
+# --- EVALUACIÓN DE SESIÓN GOOGLE NATIVA AL CARGAR ---
+# Streamlit guarda la sesión de Google OIDC en st.user / st.experimental_user
+user_obj = getattr(st, "user", getattr(st, "experimental_user", None))
+is_logged_in_google = False
+google_email = None
+
+if user_obj:
+    # Verificamos si existe el atributo is_logged_in o si el objeto contiene un email válido
+    if getattr(user_obj, "is_logged_in", False):
+        is_logged_in_google = True
+        google_email = getattr(user_obj, "email", "Usuario Google")
+    elif getattr(user_obj, "email", None):
+        is_logged_in_google = True
+        google_email = user_obj.email
+
+# --- INICIALIZACIÓN DE ESTADOS DE SESIÓN ---
 if "bd_usuarios" not in st.session_state:
     st.session_state.bd_usuarios = {
         "admin@bioexplora.cl": hashlib.sha256("123456".encode()).hexdigest()
@@ -23,25 +38,17 @@ if "conteo_avistamientos" not in st.session_state:
         "admin@bioexplora.cl": 12
     }
 
-if "autenticado" not in st.session_state:
+# Si Google confirmó el inicio de sesión, forzamos el estado autenticado
+if is_logged_in_google:
+    st.session_state.autenticado = True
+    st.session_state.usuario_actual = google_email
+    st.session_state.tipo_acceso = "Registrado"
+    if google_email not in st.session_state.conteo_avistamientos:
+        st.session_state.conteo_avistamientos[google_email] = 0
+elif "autenticado" not in st.session_state:
     st.session_state.autenticado = False
-if "usuario_actual" not in st.session_state:
     st.session_state.usuario_actual = None
-if "tipo_acceso" not in st.session_state:
     st.session_state.tipo_acceso = None
-
-# VERIFICACIÓN DE AUTENTICACIÓN GOOGLE OIDC NATIVA
-try:
-    # Soporte para versiones nuevas (st.user) y anteriores (st.experimental_user)
-    user_obj = getattr(st, "user", getattr(st, "experimental_user", None))
-    if user_obj and getattr(user_obj, "is_logged_in", False):
-        st.session_state.autenticado = True
-        st.session_state.usuario_actual = getattr(user_obj, "email", "Usuario Google")
-        st.session_state.tipo_acceso = "Registrado"
-        if st.session_state.usuario_actual not in st.session_state.conteo_avistamientos:
-            st.session_state.conteo_avistamientos[st.session_state.usuario_actual] = 0
-except Exception:
-    pass
 
 def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -259,13 +266,12 @@ def mostrar_pantalla_login():
             st.markdown("---")
             st.markdown("##### O ingresa directamente con Google:")
             
-            # Ejecución protegida de st.login con un botón explícito para evitar bucles de redirección
             if st.button("🌐 Continuar con Google", use_container_width=True):
                 try:
                     st.login("google")
                 except Exception as err:
-                    st.error(f"⚠️ Error al inicializar autenticación de Google: {err}")
-                    st.info("Asegúrese de que el archivo Secrets en Streamlit Cloud contenga las secciones [auth] y [auth.google] correctamente formateadas.")
+                    st.error(f"⚠️ Error al redireccionar a Google: {err}")
+                    st.info("Verifique que los secrets en Streamlit Cloud estén bien configurados bajo [auth.google].")
 
         with tab_registro:
             st.subheader("Crear una nueva cuenta")
@@ -456,7 +462,7 @@ def mostrar_aplicacion_principal():
             st.subheader("📝 Registrar un Nuevo Avistamiento de Biodiversidad")
             
             if st.session_state.tipo_acceso == "Invitado":
-                st.warning("🔒 Los invitados están en modo sólo lectura. Para ingresar datos y subir de level, por favor cierra sesión e inicia sesión con una cuenta de usuario.")
+                st.warning("🔒 Los invitados están en modo sólo lectura. Para ingresar datos y subir de nivel, por favor cierra sesión e inicia sesión con una cuenta de usuario.")
             else:
                 st.markdown("Completa los datos del avistamiento para contribuir a la base científica y subir en el ranking de exploradores.")
                 
