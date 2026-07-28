@@ -12,14 +12,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- EVALUACIÓN DE SESIÓN GOOGLE NATIVA AL CARGAR ---
-# Streamlit guarda la sesión de Google OIDC en st.user / st.experimental_user
+# --- VERIFICACIÓN Y CONTROL DE SESIÓN GOOGLE NATIVA ---
 user_obj = getattr(st, "user", getattr(st, "experimental_user", None))
 is_logged_in_google = False
 google_email = None
 
 if user_obj:
-    # Verificamos si existe el atributo is_logged_in o si el objeto contiene un email válido
     if getattr(user_obj, "is_logged_in", False):
         is_logged_in_google = True
         google_email = getattr(user_obj, "email", "Usuario Google")
@@ -38,7 +36,7 @@ if "conteo_avistamientos" not in st.session_state:
         "admin@bioexplora.cl": 12
     }
 
-# Si Google confirmó el inicio de sesión, forzamos el estado autenticado
+# Si Google confirmó login (al regresar del callback OIDC)
 if is_logged_in_google:
     st.session_state.autenticado = True
     st.session_state.usuario_actual = google_email
@@ -271,7 +269,7 @@ def mostrar_pantalla_login():
                     st.login("google")
                 except Exception as err:
                     st.error(f"⚠️ Error al redireccionar a Google: {err}")
-                    st.info("Verifique que los secrets en Streamlit Cloud estén bien configurados bajo [auth.google].")
+                    st.info("Verifique que los secrets en Streamlit Cloud tengan su ID y Secret reales de Google.")
 
         with tab_registro:
             st.subheader("Crear una nueva cuenta")
@@ -320,14 +318,14 @@ def mostrar_aplicacion_principal():
 
         st.markdown("---")
         if st.button("🚪 Cerrar Sesión", use_container_width=True):
+            st.session_state.autenticado = False
+            st.session_state.usuario_actual = None
+            st.session_state.tipo_acceso = None
             if hasattr(st, "logout"):
                 try:
                     st.logout()
                 except Exception:
                     pass
-            st.session_state.autenticado = False
-            st.session_state.usuario_actual = None
-            st.session_state.tipo_acceso = None
             st.rerun()
 
     st.title("🌿 BioExplora Chile: Portal de Biodiversidad")
