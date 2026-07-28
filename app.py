@@ -14,20 +14,54 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- ESTILOS CSS PERSONALIZADOS (DISEÑO NO PLANO / MODERN UI) ---
+# --- ESTILOS CSS PERSONALIZADOS (MODERN APP UI / TEMA OSCURO CIENTÍFICO) ---
 st.markdown("""
 <style>
-    /* Estilo general y tipografía suave */
+    /* Fondo general de la aplicación estilo App de Monitoreo */
     .stApp {
-        background-color: #f8fafc;
+        background-color: #0b132b;
+        color: #e2e8f0;
     }
     
-    /* Contenedores y Tarjetas con sombra y bordes redondeados (Efecto Elevado) */
+    /* Forzar tipografía clara en textos generales */
+    p, span, label, div {
+        color: #cbd5e1;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+        color: #f8fafc !important;
+    }
+
+    /* Contenedores principales (Tarjetas flotantes) */
     div.stMarkdown, div.stForm, div.stTabs {
+        background-color: #1c2541;
         border-radius: 12px;
+        padding: 5px;
     }
-    
-    /* Botones principales con degradado y sombra */
+
+    /* Pestañas de navegación estilizadas */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: #0b132b;
+        padding: 10px;
+        border-radius: 10px;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        background-color: #1c2541;
+        border-radius: 8px;
+        color: #94a3b8;
+        font-weight: 600;
+        border: 1px solid #3a506b;
+    }
+
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+        color: white !important;
+        border: none !important;
+    }
+
+    /* Botones principales con aspecto de aplicación moderna */
     div.stButton > button {
         background: linear-gradient(135deg, #10b981 0%, #059669 100%);
         color: white;
@@ -35,42 +69,54 @@ st.markdown("""
         border-radius: 8px;
         padding: 0.5rem 1rem;
         font-weight: 600;
-        box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2), 0 2px 4px -1px rgba(16, 185, 129, 0.1);
+        box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3);
         transition: all 0.3s ease;
     }
     
     div.stButton > button:hover {
         background: linear-gradient(135deg, #059669 0%, #047857 100%);
-        box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.3);
+        box-shadow: 0 8px 12px -2px rgba(16, 185, 129, 0.4);
         transform: translateY(-2px);
     }
     
-    /* Tarjetas de Métricas con relieve */
+    /* Tarjetas de Métricas con relieve oscuro */
     div[data-testid="stMetric"] {
-        background-color: #ffffff;
-        padding: 15px;
+        background-color: #1c2541;
+        padding: 16px;
         border-radius: 12px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        border: 1px solid #3a506b;
     }
     
-    /* Cajas de Alerta / Info con bordes redondeados y sombras */
+    div[data-testid="stMetric"] label {
+        color: #94a3b8 !important;
+    }
+
+    div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
+        color: #38bdf8 !important;
+        font-weight: 700;
+    }
+
+    /* Cajas de alerta / Info */
     div.stAlert {
+        background-color: #1c2541;
+        border: 1px solid #3a506b;
         border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        color: #e2e8f0;
     }
     
-    /* Inputs y Selectbox con bordes estilizados */
-    div.stTextInput > div > div > input, div.stSelectbox > div > div > div {
+    /* Inputs, Selectbox y Textarea */
+    div.stTextInput > div > div > input, div.stSelectbox > div > div > div, div.stTextArea > div > div > textarea {
+        background-color: #0b132b;
+        color: #f8fafc;
         border-radius: 8px;
-        border: 1px solid #cbd5e1;
+        border: 1px solid #3a506b;
     }
     
-    /* Sidebar con diseño diferenciado */
+    /* Sidebar con diseño de panel de control */
     section[data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid #e2e8f0;
-        box-shadow: 4px 0 10px rgba(0,0,0,0.02);
+        background-color: #0b132b;
+        border-right: 1px solid #1c2541;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -337,9 +383,9 @@ def obtener_datos_gbif(nombre_especie):
     return taxonomia, imagen_url
 
 def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
-    m = folium.Map(location=[lat_centro, lon_centro], zoom_start=zoom, tiles="OpenStreetMap")
+    m = folium.Map(location=[lat_centro, lon_centro], zoom_start=zoom, tiles="CartoDB dark_matter")
+    folium.TileLayer('OpenStreetMap', name='OpenStreetMap').add_to(m)
     folium.TileLayer('CartoDB positron', name='Claro Minimalista').add_to(m)
-    folium.TileLayer('CartoDB dark_matter', name='Oscuro').add_to(m)
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         attr='Esri',
@@ -368,9 +414,9 @@ def crear_mapa_contraste_especie(df_completo, df_especie):
     lon_c = df_especie['Longitud'].mean() if not df_especie.empty else -70.6693
     zoom = 6 if not df_especie.empty else 4
 
-    m = folium.Map(location=[lat_c, lon_c], zoom_start=zoom, tiles="OpenStreetMap")
+    m = folium.Map(location=[lat_c, lon_c], zoom_start=zoom, tiles="CartoDB dark_matter")
+    folium.TileLayer('OpenStreetMap', name='OpenStreetMap').add_to(m)
     folium.TileLayer('CartoDB positron', name='Claro Minimalista').add_to(m)
-    folium.TileLayer('CartoDB dark_matter', name='Oscuro').add_to(m)
 
     df_otros = df_completo[~df_completo.index.isin(df_especie.index)].dropna(subset=['Latitud', 'Longitud'])
     for _, row in df_otros.iterrows():
@@ -590,7 +636,14 @@ def mostrar_aplicacion_principal():
                         df_esp_chart, x='Cantidad', y='Especie',
                         orientation='h', color='Cantidad', color_continuous_scale='Greens', text_auto=True
                     )
-                    fig_esp.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=400)
+                    fig_esp.update_layout(
+                        yaxis={'categoryorder': 'total ascending'}, 
+                        showlegend=False, 
+                        height=400,
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        font=dict(color='#cbd5e1')
+                    )
                     st.plotly_chart(fig_esp, use_container_width=True)
 
             with c2:
@@ -603,7 +656,14 @@ def mostrar_aplicacion_principal():
                         df_com_chart, x='Cantidad', y='Comuna',
                         orientation='h', color='Cantidad', color_continuous_scale='Teal', text_auto=True
                     )
-                    fig_com.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=400)
+                    fig_com.update_layout(
+                        yaxis={'categoryorder': 'total ascending'}, 
+                        showlegend=False, 
+                        height=400,
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        font=dict(color='#cbd5e1')
+                    )
                     st.plotly_chart(fig_com, use_container_width=True)
 
         with tab3:
