@@ -24,18 +24,31 @@ def load_data():
     lon_col = next((c for c in df.columns if 'lon' in c or 'lng' in c), None)
     origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
 
-    # Limpieza y formateo de texto
-    df['Region'] = df[region_col].astype(str).str.strip().str.title() if region_col else "Sin Información"
-    df['Comuna'] = df[comuna_col].astype(str).str.strip().str.title() if comuna_col else "Sin Información"
+    # Limpieza y formateo asegurando tipo texto (str) primero
+    if region_col:
+        df['Region'] = df[region_col].astype(str).str.strip().str.title()
+        df['Region'] = df['Region'].replace({'Nan': 'Sin Información', 'None': 'Sin Información', '': 'Sin Información'})
+    else:
+        df['Region'] = "Sin Información"
+
+    if comuna_col:
+        df['Comuna'] = df[comuna_col].astype(str).str.strip().str.title()
+        df['Comuna'] = df['Comuna'].replace({'Nan': 'Sin Información', 'None': 'Sin Información', '': 'Sin Información'})
+    else:
+        df['Comuna'] = "Sin Información"
     
     if nombre_col:
-        df['NombreComun'] = df[nombre_col].fillna("Especie no especificada").astype(str).str.strip().str.title()
-        df['NombreComun'] = df['NombreComun'].replace({'Nan': 'Especie no especificada', 'None': 'Especie no especificada', '': 'Especie no especificada'})
+        # Convertir a str primero para evitar el conflicto de Categorical
+        df['NombreComun'] = df[nombre_col].astype(str).str.strip().str.title()
+        df['NombreComun'] = df['NombreComun'].replace({'Nan': 'Especie No Especificada', 'None': 'Especie No Especificada', '': 'Especie No Especificada'})
     else:
-        df['NombreComun'] = "Especie no especificada"
+        df['NombreComun'] = "Especie No Especificada"
 
-    df['TipoEvento'] = df[origen_col].fillna("Registro").astype(str).str.strip() if origen_col else "Registro"
-    df['TipoEvento'] = df['TipoEvento'].replace({'Nan': 'Registro', 'None': 'Registro', '': 'Registro'})
+    if origen_col:
+        df['TipoEvento'] = df[origen_col].astype(str).str.strip()
+        df['TipoEvento'] = df['TipoEvento'].replace({'Nan': 'Registro', 'None': 'Registro', '': 'Registro'})
+    else:
+        df['TipoEvento'] = "Registro"
     
     df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
     df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
@@ -81,13 +94,13 @@ try:
         st.subheader("Métricas Generales")
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Registros", f"{len(df):,}")
-        col2.metric("Especies Distintas", f"{df[df['NombreComun'] != 'Especie no especificada']['NombreComun'].nunique():,}")
+        col2.metric("Especies Distintas", f"{df[df['NombreComun'] != 'Especie No Especificada']['NombreComun'].nunique():,}")
         col3.metric("Comunas Cubiertas", f"{df['Comuna'].nunique():,}")
         
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("### Top 10 Especies Más Frecuentes")
-            top_esp = df[df['NombreComun'] != 'Especie no especificada']['NombreComun'].value_counts().head(10)
+            top_esp = df[df['NombreComun'] != 'Especie No Especificada']['NombreComun'].value_counts().head(10)
             st.dataframe(top_esp if not top_esp.empty else "No hay especies catalogadas", use_container_width=True)
         with c2:
             st.markdown("### Top 10 Comunas con Mayor Actividad")
