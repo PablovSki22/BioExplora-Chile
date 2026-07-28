@@ -37,7 +37,12 @@ if "perfiles_usuarios" not in st.session_state:
     st.session_state.perfiles_usuarios = {
         "admin@bioexplora.cl": {
             "nombre": "Administrador",
-            "bio": "Gestor oficial del portal BioExplora Chile."
+            "bio": "Gestor oficial del portal BioExplora Chile.",
+            "edad": 35,
+            "genero": "No especificado",
+            "instagram": "bioexplora_cl",
+            "facebook": "",
+            "avatar": None
         }
     }
 
@@ -46,7 +51,7 @@ if "conteo_avistamientos" not in st.session_state:
         "admin@bioexplora.cl": 12
     }
 
-# Si Google confirmó login (al regresar del callback OIDC)
+# Si Google confirmó login
 if is_logged_in_google:
     st.session_state.autenticado = True
     st.session_state.usuario_actual = google_email
@@ -56,7 +61,12 @@ if is_logged_in_google:
     if google_email not in st.session_state.perfiles_usuarios:
         st.session_state.perfiles_usuarios[google_email] = {
             "nombre": google_email.split("@")[0].title(),
-            "bio": "Entusiasta de la biodiversidad chilena."
+            "bio": "Entusiasta de la biodiversidad chilena.",
+            "edad": "",
+            "genero": "Prefiero no decirlo",
+            "instagram": "",
+            "facebook": "",
+            "avatar": None
         }
 elif "autenticado" not in st.session_state:
     st.session_state.autenticado = False
@@ -222,7 +232,6 @@ if "df_nuevos_registros" not in st.session_state:
 def get_complete_data():
     base_df = load_base_data()
     if not st.session_state.df_nuevos_registros.empty:
-        # Asegurarnos de usar solo las columnas requeridas para evitar warnings de concat
         cols_base = ['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud']
         df_clean_nuevos = st.session_state.df_nuevos_registros[cols_base]
         return pd.concat([base_df, df_clean_nuevos], ignore_index=True)
@@ -343,7 +352,12 @@ def mostrar_pantalla_login():
                     st.session_state.conteo_avistamientos[nuevo_email] = 0
                     st.session_state.perfiles_usuarios[nuevo_email] = {
                         "nombre": nuevo_email.split("@")[0].title(),
-                        "bio": "Entusiasta de la naturaleza."
+                        "bio": "Entusiasta de la naturaleza.",
+                        "edad": "",
+                        "genero": "Prefiero no decirlo",
+                        "instagram": "",
+                        "facebook": "",
+                        "avatar": None
                     }
                     st.success("¡Cuenta creada exitosamente! Ya puede iniciar sesión.")
 
@@ -359,12 +373,21 @@ def mostrar_pantalla_login():
 # --- APLICACIÓN PRINCIPAL ---
 def mostrar_aplicacion_principal():
     usr_actual = st.session_state.usuario_actual
-    perfil_actual = st.session_state.perfiles_usuarios.get(usr_actual, {"nombre": usr_actual, "bio": "Sin biografía"})
+    perfil_actual = st.session_state.perfiles_usuarios.get(usr_actual, {
+        "nombre": usr_actual, "bio": "Sin biografía", "edad": "", "genero": "No especificado", "instagram": "", "facebook": "", "avatar": None
+    })
 
     with st.sidebar:
+        # Mostrar foto de perfil en miniatura si existe
+        if perfil_actual.get('avatar') is not None:
+            st.image(perfil_actual.get('avatar'), width=80)
+        
         st.markdown(f"👤 **Nombre:** `{perfil_actual.get('nombre')}`")
         st.markdown(f"📧 **Cuenta:** `{usr_actual}`")
         st.markdown(f"🏷️ **Perfil:** `{st.session_state.tipo_acceso}`")
+        
+        if perfil_actual.get('instagram'):
+            st.markdown(f"📸 **Instagram:** [@{perfil_actual.get('instagram')}](https://instagram.com/{perfil_actual.get('instagram').replace('@','')})")
         
         if st.session_state.tipo_acceso == "Registrado":
             cant_obs = st.session_state.conteo_avistamientos.get(usr_actual, 0)
@@ -557,7 +580,6 @@ def mostrar_aplicacion_principal():
                             nom_especie_limpio = input_especie.strip().title()
                             comuna_limpia = input_comuna.strip().title()
                             
-                            # Intentar sacar coordenadas de la foto (EXIF)
                             lat_exif, lon_exif = None, None
                             if foto_avistamiento is not None:
                                 lat_exif, lon_exif = obtener_coordenadas_exif(foto_avistamiento)
@@ -566,7 +588,6 @@ def mostrar_aplicacion_principal():
                                 lat_final, lon_final = lat_exif, lon_exif
                                 st.success("📍 ¡Ubicación GPS extraída exitosamente de la fotografía!")
                             else:
-                                # Respaldo por comuna o región si la foto no trae GPS
                                 lat_final = COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[0]
                                 lon_final = COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[1]
                                 if foto_avistamiento is not None:
@@ -583,7 +604,6 @@ def mostrar_aplicacion_principal():
                             }])
                             
                             st.session_state.df_nuevos_registros = pd.concat([st.session_state.df_nuevos_registros, nuevo_registro], ignore_index=True)
-                            
                             st.session_state.conteo_avistamientos[usr_actual] = st.session_state.conteo_avistamientos.get(usr_actual, 0) + 1
                             
                             st.balloons()
@@ -593,19 +613,52 @@ def mostrar_aplicacion_principal():
             with tab_perfil:
                 st.subheader("⚙️ Configuración y Personalización del Perfil")
                 
-                with st.form("form_perfil"):
-                    nuevo_nombre_publico = st.text_input("Nombre Público / Alias:", value=perfil_actual.get("nombre", ""))
-                    nueva_bio = st.text_area("Biografía o Descripción personal:", value=perfil_actual.get("bio", ""))
-                    
-                    btn_guardar_perfil = st.form_submit_button("💾 Guardar Cambios de Perfil", type="primary")
-                    
-                    if btn_guardar_perfil:
-                        st.session_state.perfiles_usuarios[usr_actual] = {
-                            "nombre": nuevo_nombre_publico.strip() or usr_actual,
-                            "bio": nueva_bio.strip()
-                        }
-                        st.success("¡Perfil actualizado correctamente!")
-                        st.rerun()
+                col_p1, col_p2 = st.columns([1, 2])
+                with col_p1:
+                    if perfil_actual.get('avatar') is not None:
+                        st.image(perfil_actual.get('avatar'), caption="Tu Foto de Perfil", use_container_width=True)
+                    else:
+                        st.info("📷 Sin foto de perfil cargada.")
+                
+                with col_p2:
+                    with st.form("form_perfil"):
+                        nuevo_nombre_publico = st.text_input("Nombre Público / Alias:", value=perfil_actual.get("nombre", ""))
+                        nueva_bio = st.text_area("Biografía o Descripción personal:", value=perfil_actual.get("bio", ""))
+                        
+                        c_edad, c_gen = st.columns(2)
+                        with c_edad:
+                            edad_actual = perfil_actual.get("edad", "")
+                            nueva_edad = st.text_input("Edad:", value=str(edad_actual) if edad_actual else "")
+                        with c_gen:
+                            opciones_genero = ["Prefiero no decirlo", "Masculino", "Femenino", "Otro"]
+                            gen_guardado = perfil_actual.get("genero", "Prefiero no decirlo")
+                            idx_gen = opciones_genero.index(gen_guardado) if gen_guardado in opciones_genero else 0
+                            nuevo_genero = st.selectbox("Género:", opciones_genero, index=idx_gen)
+
+                        st.markdown("##### 🔗 Redes Sociales y Enlaces")
+                        c_ig, c_fb = st.columns(2)
+                        with c_ig:
+                            nuevo_ig = st.text_input("Usuario de Instagram (ej: usuario_cl):", value=perfil_actual.get("instagram", ""))
+                        with c_fb:
+                            nuevo_fb = st.text_input("Perfil de Facebook (URL o nombre):", value=perfil_actual.get("facebook", ""))
+
+                        nueva_foto_avatar = st.file_uploader("Actualizar Fotografía de Perfil:", type=["jpg", "jpeg", "png"])
+                        
+                        btn_guardar_perfil = st.form_submit_button("💾 Guardar Cambios de Perfil", type="primary", use_container_width=True)
+                        
+                        if btn_guardar_perfil:
+                            avatar_a_guardar = nueva_foto_avatar if nueva_foto_avatar is not None else perfil_actual.get('avatar')
+                            st.session_state.perfiles_usuarios[usr_actual] = {
+                                "nombre": nuevo_nombre_publico.strip() or usr_actual,
+                                "bio": nueva_bio.strip(),
+                                "edad": nueva_edad.strip(),
+                                "genero": nuevo_genero,
+                                "instagram": nuevo_ig.strip().replace("@", ""),
+                                "facebook": nuevo_fb.strip(),
+                                "avatar": avatar_a_guardar
+                            }
+                            st.success("¡Perfil actualizado correctamente!")
+                            st.rerun()
 
                 st.markdown("---")
                 st.markdown("### 📋 Tus Avistamientos Realizados")
