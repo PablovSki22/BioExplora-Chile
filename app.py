@@ -18,7 +18,6 @@ if "bd_usuarios" not in st.session_state:
         "admin@bioexplora.cl": hashlib.sha256("123456".encode()).hexdigest()
     }
 
-# Registro de avistamientos por usuario para calcular su reputación/rango
 if "conteo_avistamientos" not in st.session_state:
     st.session_state.conteo_avistamientos = {
         "admin@bioexplora.cl": 12
@@ -30,6 +29,17 @@ if "usuario_actual" not in st.session_state:
     st.session_state.usuario_actual = None
 if "tipo_acceso" not in st.session_state:
     st.session_state.tipo_acceso = None
+
+# VERIFICACIÓN DE AUTENTICACIÓN GOOGLE OIDC NATIVA
+try:
+    if hasattr(st, "user") and st.user and getattr(st.user, "email", None):
+        st.session_state.autenticado = True
+        st.session_state.usuario_actual = st.user.email
+        st.session_state.tipo_acceso = "Registrado"
+        if st.user.email not in st.session_state.conteo_avistamientos:
+            st.session_state.conteo_avistamientos[st.user.email] = 0
+except Exception:
+    pass
 
 def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -147,7 +157,6 @@ def load_base_data():
 
     return df
 
-# Carga de datos unificada con las adiciones del usuario en vivo
 if "df_nuevos_registros" not in st.session_state:
     st.session_state.df_nuevos_registros = pd.DataFrame(columns=['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud'])
 
@@ -248,12 +257,9 @@ def mostrar_pantalla_login():
             st.markdown("---")
             st.markdown("##### O ingresa directamente con Google:")
             try:
-                if hasattr(st, "login"):
-                    if st.button("🌐 Continuar con Google", use_container_width=True):
-                        st.login("google")
-                else:
-                    st.info("💡 La autenticación nativa de Google está disponible al activar secretos OAuth en Streamlit Cloud.")
-            except Exception:
+                # Dibuja el botón nativo oficial de Google
+                st.login("google")
+            except Exception as e:
                 st.info("💡 Configure los secretos de Google Client OAuth en Streamlit Cloud para activar este botón.")
 
         with tab_registro:
@@ -289,7 +295,6 @@ def mostrar_aplicacion_principal():
         st.markdown(f"👤 **Usuario:** `{st.session_state.usuario_actual}`")
         st.markdown(f"🏷️ **Perfil:** `{st.session_state.tipo_acceso}`")
         
-        # Sistema de Gamificación / Nivel del Usuario
         if st.session_state.tipo_acceso == "Registrado":
             cant_obs = st.session_state.conteo_avistamientos.get(st.session_state.usuario_actual, 0)
             rango, color_badge = obtener_rango_usuario(cant_obs)
@@ -300,10 +305,15 @@ def mostrar_aplicacion_principal():
             st.progress(min(cant_obs / 15, 1.0))
         else:
             st.markdown("---")
-            st.info("💡 Regístrate para sumar puntos y desbloquear rangos de especialista al aportar avistamientos.")
+            st.info("💡 Regístrate para sumar puntos y desbloquear rangos al aportar avistamientos.")
 
         st.markdown("---")
         if st.button("🚪 Cerrar Sesión", use_container_width=True):
+            if hasattr(st, "logout"):
+                try:
+                    st.logout()
+                except Exception:
+                    pass
             st.session_state.autenticado = False
             st.session_state.usuario_actual = None
             st.session_state.tipo_acceso = None
@@ -440,7 +450,6 @@ def mostrar_aplicacion_principal():
         with tab4:
             st.subheader("📝 Registrar un Nuevo Avistamiento de Biodiversidad")
             
-            # Verificación de permisos según el perfil
             if st.session_state.tipo_acceso == "Invitado":
                 st.warning("🔒 Los invitados están en modo sólo lectura. Para ingresar datos y subir de nivel, por favor cierra sesión e inicia sesión con una cuenta de usuario.")
             else:
@@ -469,7 +478,6 @@ def mostrar_aplicacion_principal():
                             nom_especie_limpio = input_especie.strip().title()
                             comuna_limpia = input_comuna.strip().title()
                             
-                            # Asignación de coordenadas por defecto si no ingresa lat/lon explícita
                             lat_final = input_lat if input_lat != 0.0 else COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[0]
                             lon_final = input_lon if input_lon != 0.0 else COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[1]
                             
