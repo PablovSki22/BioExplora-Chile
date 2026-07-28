@@ -12,7 +12,7 @@ st.set_page_config(
 def load_data():
     df = pd.read_parquet("datos_bioexplora.parquet")
     
-    # Estandarizar nombres de columnas a minúsculas para evitar mismatches
+    # Estandarizar nombres de columnas a minúsculas
     cols = {col: col.strip().lower() for col in df.columns}
     df = df.rename(columns=cols)
     
@@ -24,7 +24,7 @@ def load_data():
     lon_col = next((c for c in df.columns if 'lon' in c or 'lng' in c), None)
     origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
 
-    # Renombrar estandarizado
+    # Limpieza
     df['Region'] = df[region_col].astype(str).str.strip().str.title() if region_col else "Sin Información"
     df['Comuna'] = df[comuna_col].astype(str).str.strip().str.title() if comuna_col else "Sin Información"
     df['NombreComun'] = df[nombre_col].astype(str).str.strip().str.title() if nombre_col else "Sin Información"
@@ -33,6 +33,7 @@ def load_data():
     df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
     df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
     
+    # Filtrar valores vacíos
     df = df[~df['NombreComun'].isin(['Nan', 'None', '', 'Sin Información', 'Sin Información '])]
     return df
 
@@ -55,9 +56,10 @@ try:
         if selected_region != "Todas":
             df_map = df_map[df_map['Region'] == selected_region]
             
-        st.info(f"Registros georreferenciados: {len(df_map):,}")
+        st.info(f"Registros georreferenciados disponibles: {len(df_map):,}")
         
-        sample_size = min(30000, len(df_map))
+        # Muestra ligera (máx 5.000 para evitar agotar memoria RAM)
+        sample_size = min(5000, len(df_map))
         if sample_size > 0:
             df_sample = df_map.sample(n=sample_size, random_state=42) if len(df_map) > sample_size else df_map
             
@@ -106,8 +108,11 @@ try:
                     df_esp_geo = df_esp.dropna(subset=['Latitud', 'Longitud'])
                     df_esp_geo = df_esp_geo[(df_esp_geo['Latitud'] < 0) & (df_esp_geo['Longitud'] < 0)]
                     if len(df_esp_geo) > 0:
+                        sample_esp = min(3000, len(df_esp_geo))
+                        df_esp_sample = df_esp_geo.sample(n=sample_esp, random_state=42) if len(df_esp_geo) > sample_esp else df_esp_geo
+                        
                         fig_esp = px.scatter_geo(
-                            df_esp_geo,
+                            df_esp_sample,
                             lat="Latitud",
                             lon="Longitud",
                             color="TipoEvento",
