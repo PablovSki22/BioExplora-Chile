@@ -1,6 +1,8 @@
-streamlit
+streamlit[auth]
+authlib>=1.3.2
 pandas
-pyarrow
 plotly
 folium
 streamlit-folium
+requests
+pyarrow
