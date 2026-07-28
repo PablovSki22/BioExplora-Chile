@@ -10,41 +10,29 @@ st.set_page_config(
 
 @st.cache_data
 def load_data():
-    # 1. Leer encabezados para mapear columnas sin cargar todo en memoria
-    preview = pd.read_parquet("datos_bioexplora.parquet")
-    cols_map = {col: col.strip().lower() for col in preview.columns}
+    # Leer el archivo liviano ya preprocesado
+    df = pd.read_parquet("datos_bioexplora_light.parquet")
     
-    region_col = next((c for c, l in cols_map.items() if 'region' in l), None)
-    comuna_col = next((c for c, l in cols_map.items() if 'comuna' in l), None)
-    nombre_col = next((c for c, l in cols_map.items() if 'nombre' in l or 'especie' in l), None)
-    lat_col = next((c for c, l in cols_map.items() if 'lat' in l), None)
-    lon_col = next((c for c, l in cols_map.items() if 'lon' in l or 'lng' in l), None)
-    origen_col = next((c for c, l in cols_map.items() if 'origen' in l or 'tipo' in l or 'evento' in l), None)
-
-    needed_cols = [c for c in [region_col, comuna_col, nombre_col, lat_col, lon_col, origen_col] if c]
-
-    # 2. Leer solo las columnas estrictamente necesarias
-    df = pd.read_parquet("datos_bioexplora.parquet", columns=needed_cols)
+    # Estandarizar nombres por seguridad
+    cols = {col: col.strip().lower() for col in df.columns}
+    df = df.rename(columns=cols)
     
-    # 3. Formatear y optimizar uso de RAM
-    df['Region'] = df[region_col].astype(str).str.strip().str.title().astype('category') if region_col else "Sin Información"
-    df['Comuna'] = df[comuna_col].astype(str).str.strip().str.title().astype('category') if comuna_col else "Sin Información"
+    region_col = next((c for c in df.columns if 'region' in c), None)
+    comuna_col = next((c for c in df.columns if 'comuna' in c), None)
+    nombre_col = next((c for c in df.columns if 'nombre' in c or 'especie' in c), None)
+    lat_col = next((c for c in df.columns if 'lat' in c), None)
+    lon_col = next((c for c in df.columns if 'lon' in c or 'lng' in c), None)
+    origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
+
+    df['Region'] = df[region_col].astype(str).str.strip().str.title() if region_col else "Sin Información"
+    df['Comuna'] = df[comuna_col].astype(str).str.strip().str.title() if comuna_col else "Sin Información"
     df['NombreComun'] = df[nombre_col].astype(str).str.strip().str.title() if nombre_col else "Sin Información"
-    df['TipoEvento'] = df[origen_col].astype(str).str.strip().astype('category') if origen_col else "Registro"
+    df['TipoEvento'] = df[origen_col].astype(str).str.strip() if origen_col else "Registro"
     
-    if lat_col:
-        df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce').astype('float32')
-    else:
-        df['Latitud'] = None
-        
-    if lon_col:
-        df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce').astype('float32')
-    else:
-        df['Longitud'] = None
-
-    # Filtrar registros vacíos
-    df = df[~df['NombreComun'].isin(['Nan', 'None', '', 'Sin Información'])]
-    return df[['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud']]
+    df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
+    df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
+    
+    return df
 
 st.title("🌿 BioExplora Chile: Portal de Biodiversidad")
 st.markdown("Visualizador interactivo de monitoreo y rescates a nivel nacional.")
@@ -56,7 +44,7 @@ try:
     
     with tab1:
         st.subheader("Filtro por Región")
-        regiones = ["Todas"] + sorted([r for r in df['Region'].unique() if r not in ['Nan', 'None']])
+        regiones = ["Todas"] + sorted([r for r in df['Region'].unique() if r not in ['Nan', 'None', 'Sin Información']])
         selected_region = st.selectbox("Seleccione Región:", regiones)
         
         df_map = df.dropna(subset=['Latitud', 'Longitud'])
@@ -65,15 +53,11 @@ try:
         if selected_region != "Todas":
             df_map = df_map[df_map['Region'] == selected_region]
             
-        st.info(f"Registros georreferenciados disponibles: {len(df_map):,}")
+        st.info(f"Registros georreferenciados en vista: {len(df_map):,}")
         
-        # Muestra ultra liviana (máx 2,500 puntos) para no saturar memoria/GPU
-        sample_size = min(2500, len(df_map))
-        if sample_size > 0:
-            df_sample = df_map.sample(n=sample_size, random_state=42) if len(df_map) > sample_size else df_map
-            
+        if len(df_map) > 0:
             fig = px.scatter_geo(
-                df_sample,
+                df_map,
                 lat="Latitud",
                 lon="Longitud",
                 color="TipoEvento",
@@ -117,11 +101,8 @@ try:
                     df_esp_geo = df_esp.dropna(subset=['Latitud', 'Longitud'])
                     df_esp_geo = df_esp_geo[(df_esp_geo['Latitud'] < 0) & (df_esp_geo['Longitud'] < 0)]
                     if len(df_esp_geo) > 0:
-                        sample_esp = min(2000, len(df_esp_geo))
-                        df_esp_sample = df_esp_geo.sample(n=sample_esp, random_state=42) if len(df_esp_geo) > sample_esp else df_esp_geo
-                        
                         fig_esp = px.scatter_geo(
-                            df_esp_sample,
+                            df_esp_geo,
                             lat="Latitud",
                             lon="Longitud",
                             color="TipoEvento",
