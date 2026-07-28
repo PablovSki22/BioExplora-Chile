@@ -137,7 +137,7 @@ def obtener_datos_gbif(nombre_especie):
                 "Nombre Científico": data.get("scientificName", nombre_query)
             }
             
-            # Intento A: Busqueda de fotos en registros de GBIF
+            # Intento A: Búsqueda de fotos en registros de GBIF
             if usage_key:
                 occ_url = f"https://api.gbif.org/v1/occurrence/search?taxonKey={usage_key}&mediaType=StillImage&limit=1"
                 occ_res = requests.get(occ_url, timeout=4)
@@ -235,7 +235,7 @@ try:
             zoom_level = 4 if selected_region == "Todas" else 7
 
             mapa = crear_mapa_folium(df_map, lat_center, lon_center, zoom_level)
-            st_folium(mapa, width="100%", height=650, returned_objects=[])
+            st_folium(mapa, use_container_width=True, height=650, returned_objects=[])
         else:
             st.warning("No hay registros que coincidan con los filtros seleccionados.")
             
@@ -265,7 +265,7 @@ try:
                     text_auto=True
                 )
                 fig_esp.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
-                st.plotly_chart(fig_esp, width="100%")
+                st.plotly_chart(fig_esp, use_container_width=True)
 
         with c2:
             st.markdown("### Top 10 Comunas con Mayor Actividad")
@@ -283,7 +283,7 @@ try:
                     text_auto=True
                 )
                 fig_com.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
-                st.plotly_chart(fig_com, width="100%")
+                st.plotly_chart(fig_com, use_container_width=True)
 
     with tab3:
         st.subheader("Buscador y Ficha de Especie")
@@ -319,7 +319,7 @@ try:
                 
                 with col_info_a:
                     if img_url:
-                        st.image(img_url, caption=f"Fotografía de referencia: {especie_seleccionada}", width="100%")
+                        st.image(img_url, caption=f"Fotografía de referencia: {especie_seleccionada}", use_container_width=True)
                     else:
                         st.info("📷 No se encontró fotografía pública registrada para esta especie.")
                         
@@ -342,12 +342,12 @@ try:
                     st.markdown("#### Presencia por Comuna")
                     df_comuna_esp = df_esp['Comuna'].value_counts().reset_index()
                     df_comuna_esp.columns = ['Comuna', 'Registros']
-                    st.dataframe(df_comuna_esp, width="100%", height=200)
+                    st.dataframe(df_comuna_esp, use_container_width=True, height=200)
                     
                     st.markdown("#### Distribución por Región")
                     df_reg_esp = df_esp['Region'].value_counts().reset_index()
                     df_reg_esp.columns = ['Región', 'Registros']
-                    st.dataframe(df_reg_esp, width="100%", height=180)
+                    st.dataframe(df_reg_esp, use_container_width=True, height=180)
 
                 with col_b:
                     st.markdown("#### Ubicación de Avistamientos")
@@ -359,13 +359,13 @@ try:
                         zoom_dinamico = 9 if len(df_esp_geo) <= 3 else 6
                         
                         mapa_esp = crear_mapa_folium(df_esp_geo, lat_c, lon_c, zoom_dinamico)
-                        st_folium(mapa_esp, width="100%", height=450, returned_objects=[])
+                        st_folium(mapa_esp, use_container_width=True, height=450, returned_objects=[])
                     else:
                         st.warning("No fue posible ubicar geográficamente este registro.")
 
                 st.markdown("#### Detalle de Registros Encontrados")
                 cols_mostrar = [c for c in ['NombreComun', 'Region', 'Comuna', 'TipoEvento', 'Latitud', 'Longitud'] if c in df_esp.columns]
-                st.dataframe(df_esp[cols_mostrar], width="100%")
+                st.dataframe(df_esp[cols_mostrar], use_container_width=True)
 
 except Exception as e:
     st.error(f"Error al cargar la base de datos: {e}")
