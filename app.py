@@ -32,12 +32,14 @@ if "tipo_acceso" not in st.session_state:
 
 # VERIFICACIÓN DE AUTENTICACIÓN GOOGLE OIDC NATIVA
 try:
-    if hasattr(st, "user") and st.user and getattr(st.user, "email", None):
+    # Soporte para versiones nuevas (st.user) y anteriores (st.experimental_user)
+    user_obj = getattr(st, "user", getattr(st, "experimental_user", None))
+    if user_obj and getattr(user_obj, "is_logged_in", False):
         st.session_state.autenticado = True
-        st.session_state.usuario_actual = st.user.email
+        st.session_state.usuario_actual = getattr(user_obj, "email", "Usuario Google")
         st.session_state.tipo_acceso = "Registrado"
-        if st.user.email not in st.session_state.conteo_avistamientos:
-            st.session_state.conteo_avistamientos[st.user.email] = 0
+        if st.session_state.usuario_actual not in st.session_state.conteo_avistamientos:
+            st.session_state.conteo_avistamientos[st.session_state.usuario_actual] = 0
 except Exception:
     pass
 
@@ -244,7 +246,7 @@ def mostrar_pantalla_login():
             email_login = st.text_input("Correo Electrónico", key="login_email")
             pass_login = st.text_input("Contraseña", type="password", key="login_pass")
             
-            if st.button("Ingresar", use_container_width=True, type="primary"):
+            if st.button("Ingresar con correo", use_container_width=True, type="primary"):
                 hashed = hash_pass(pass_login)
                 if email_login in st.session_state.bd_usuarios and st.session_state.bd_usuarios[email_login] == hashed:
                     st.session_state.autenticado = True
@@ -257,12 +259,13 @@ def mostrar_pantalla_login():
             st.markdown("---")
             st.markdown("##### O ingresa directamente con Google:")
             
-            # Ejecución limpia del login nativo de Streamlit
-            try:
-                st.login("google")
-            except Exception as err:
-                st.error(f"⚠️ Error al inicializar autenticación de Google: {err}")
-                st.info("Asegúrese de que el archivo Secrets en Streamlit Cloud contenga las secciones [auth] y [auth.google] correctamente formateadas.")
+            # Ejecución protegida de st.login con un botón explícito para evitar bucles de redirección
+            if st.button("🌐 Continuar con Google", use_container_width=True):
+                try:
+                    st.login("google")
+                except Exception as err:
+                    st.error(f"⚠️ Error al inicializar autenticación de Google: {err}")
+                    st.info("Asegúrese de que el archivo Secrets en Streamlit Cloud contenga las secciones [auth] y [auth.google] correctamente formateadas.")
 
         with tab_registro:
             st.subheader("Crear una nueva cuenta")
