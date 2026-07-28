@@ -11,6 +11,7 @@ st.set_page_config(
     layout="wide"
 )
 
+# Diccionario de coordenadas para fallback de comunas
 COORDENADAS_COMUNAS = {
     "Arica": (-18.4783, -70.3126), "Iquique": (-20.2133, -70.1503), "Antofagasta": (-23.6509, -70.3975),
     "Calama": (-22.4544, -68.9294), "Copiapó": (-27.3668, -70.3323), "Vallenar": (-28.5751, -70.7581),
@@ -28,6 +29,41 @@ COORDENADAS_COMUNAS = {
     "Coyhaique": (-45.5752, -72.0662), "Puerto Aysén": (-45.4058, -72.6936), "Punta Arenas": (-53.1638, -70.9171),
     "Natales": (-51.7269, -72.5062), "Puerto Natales": (-51.7269, -72.5062), "Porvenir": (-53.2954, -70.3668)
 }
+
+# MAPEO DIRECTO DE NOMBRES COMUNES A CIENTÍFICOS PARA GBIF
+MAPEO_NOMBRES_CIENTIFICOS = {
+    "sapito 4 ojos": "Pleurodema thaul",
+    "sapito cuatro ojos": "Pleurodema thaul",
+    "sapito de cuatro ojos": "Pleurodema thaul",
+    "ranita de darwin": "Rhinoderma darwinii",
+    "zorro culpeo": "Lycalopex culpaeus",
+    "zorro chilla": "Lycalopex griseus",
+    "puma": "Puma concolor",
+    "huemul": "Hippocamelus bisulcus",
+    "pudú": "Pudu puda",
+    "pudu": "Pudu puda",
+    "monito del monte": "Dromiciops gliroides",
+    "cóndor andino": "Vultur gryphus",
+    "condor andino": "Vultur gryphus",
+    "condor": "Vultur gryphus",
+    "flamenco chileno": "Phoenicopterus chilensis",
+    "carpintero negro": "Campephilus magellanicus",
+    "pingüino de humboldt": "Spheniscus humboldti",
+    "pinguino de humboldt": "Spheniscus humboldti",
+    "loica": "Leistes loyca",
+    "guanaco": "Lama guanicoe",
+    "chinchilla cordillerana": "Chinchilla chinchilla",
+    "araucaria": "Araucaria araucana",
+    "copihue": "Lapageria rosea",
+    "litre": "Lithraea caustica"
+}
+
+def obtener_nombre_cientifico_resuelto(nombre_ingresado):
+    """Mapea el nombre común ingresado a su nombre científico para la API."""
+    if not nombre_ingresado:
+        return nombre_ingresado
+    limpio = str(nombre_ingresado).strip().lower()
+    return MAPEO_NOMBRES_CIENTIFICOS.get(limpio, nombre_ingresado)
 
 @st.cache_data
 def load_data():
@@ -76,7 +112,8 @@ def load_data():
 
 @st.cache_data(ttl=3600)
 def obtener_datos_gbif(nombre_especie):
-    url = f"https://api.gbif.org/v1/species/match?name={nombre_especie}"
+    nombre_query = obtener_nombre_cientifico_resuelto(nombre_especie)
+    url = f"https://api.gbif.org/v1/species/match?name={nombre_query}"
     try:
         res = requests.get(url, timeout=4)
         if res.status_code == 200:
@@ -90,7 +127,7 @@ def obtener_datos_gbif(nombre_especie):
                 "Orden": data.get("order", "Desconocido"),
                 "Familia": data.get("family", "Desconocido"),
                 "Género": data.get("genus", "Desconocido"),
-                "Nombre Científico": data.get("scientificName", nombre_especie)
+                "Nombre Científico": data.get("scientificName", nombre_query)
             }
             
             imagen_url = None
@@ -137,6 +174,7 @@ def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
     folium.LayerControl(position='topright').add_to(m)
     return m
 
+# --- INTERFAZ PRINCIPAL ---
 st.title("🌿 BioExplora Chile: Portal de Biodiversidad")
 st.markdown("Visualizador interactivo de monitoreo y rescates a nivel nacional.")
 
