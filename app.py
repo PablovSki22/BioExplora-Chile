@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import folium
 from streamlit_folium import st_folium
+import requests
 
 st.set_page_config(
     page_title="BioExplora Chile",
@@ -33,8 +34,7 @@ COORDENADAS_COMUNAS = {
 def load_data():
     df_raw = pd.read_parquet("datos_bioexplora_light.parquet")
     
-    # 1. Copiar y forzar conversión de absolutamente TODAS las columnas a objetos/strings simples
-    # Esto elimina de raíz cualquier tipo Categorical proveniente del archivo parquet original.
+    # Forzar conversión de todas las columnas a string para evitar errores con Categoricals
     df = pd.DataFrame()
     for col in df_raw.columns:
         df[str(col).strip().lower()] = df_raw[col].astype(str)
@@ -46,24 +46,23 @@ def load_data():
     lon_col = next((c for c in df.columns if any(term in c for term in ['lon', 'lng', 'x_coord', 'x'])), None)
     origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
 
-    # 2. Asignación limpia de columnas principales
+    # Asignación limpia de columnas
     df['Region'] = df[region_col].str.strip().str.title() if region_col else "Sin Información"
     df['Comuna'] = df[comuna_col].str.strip().str.title() if comuna_col else "Sin Información"
     df['NombreComun'] = df[nombre_col].str.strip().str.title() if nombre_col else "Especie No Especificada"
     df['TipoEvento'] = df[origen_col].str.strip() if origen_col else "Registro"
 
-    # Reemplazar valores nulos/vacíos representados en string
+    # Reemplazar valores vacíos o nulos
     invalid_values = ['nan', 'none', '', 'null', 'sin informacion', 'sin información', '<na>']
-    
     df['NombreComun'] = df['NombreComun'].apply(lambda x: 'Especie No Especificada' if str(x).lower() in invalid_values else x)
     df['Region'] = df['Region'].apply(lambda x: 'Sin Información' if str(x).lower() in invalid_values else x)
     df['Comuna'] = df['Comuna'].apply(lambda x: 'Sin Información' if str(x).lower() in invalid_values else x)
 
-    # 3. Conversión numérica de coordenadas
+    # Conversión numérica de coordenadas
     df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
     df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
 
-    # 4. Asignar coordenadas de respaldo (fallback por comuna) si faltan
+    # Coordenadas de respaldo si faltan
     def obtener_lat(row):
         lat = row['Latitud']
         if pd.notnull(lat) and lat != 0:
@@ -81,13 +80,44 @@ def load_data():
 
     return df
 
+@st.cache_data(ttl=3600)
+def obtener_datos_gbif(nombre_especie):
+    """Consulta la API de GBIF para obtener taxonomía e imagen externa sin recargar la RAM."""
+    url = f"https://api.gbif.org/v1/species/match?name={nombre_especie}"
+    try:
+        res = requests.get(url, timeout=4)
+        if res.status_code == 200:
+            data = res.json()
+            usage_key = data.get('usageKey')
+            
+            taxonomia = {
+                "Reino": data.get("kingdom", "Desconocido"),
+                "Filo": data.get("phylum", "Desconocido"),
+                "Clase": data.get("class", "Desconocido"),
+                "Orden": data.get("order", "Desconocido"),
+                "Familia": data.get("family", "Desconocido"),
+                "Género": data.get("genus", "Desconocido"),
+                "Nombre Científico": data.get("scientificName", nombre_especie)
+            }
+            
+            imagen_url = None
+            if usage_key:
+                media_url = f"https://api.gbif.org/v1/species/{usage_key}/media"
+                media_res = requests.get(media_url, timeout=4)
+                if media_res.status_code == 200:
+                    results = media_res.json().get('results', [])
+                    for item in results:
+                        if item.get('type') == 'StillImage' and 'identifier' in item:
+                            imagen_url = item['identifier']
+                            break
+                            
+            return taxonomia, imagen_url
+    except Exception:
+        pass
+    return None, None
+
 def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
-    m = folium.Map(
-        location=[lat_centro, lon_centro],
-        zoom_start=zoom,
-        tiles="OpenStreetMap"
-    )
-    
+    m = folium.Map(location=[lat_centro, lon_centro], zoom_start=zoom, tiles="OpenStreetMap")
     folium.TileLayer('CartoDB positron', name='Claro Minimalista').add_to(m)
     folium.TileLayer('CartoDB dark_matter', name='Oscuro').add_to(m)
     folium.TileLayer(
@@ -122,7 +152,7 @@ try:
     
     tab1, tab2, tab3 = st.tabs(["📌 Mapa Geográfico", "📊 Estadísticas", "🔍 Buscador de Especies"])
 
-    # TAB 1: MAPA GEOGRÁFICO GENERAL
+    # TAB 1: MAPA GEOGRÁFICO
     with tab1:
         st.subheader("Filtros del Mapa")
         c_reg, c_est = st.columns(2)
@@ -156,7 +186,7 @@ try:
             zoom_level = 4 if selected_region == "Todas" else 7
 
             mapa = crear_mapa_folium(df_map, lat_center, lon_center, zoom_level)
-            st_folium(mapa, use_container_width=True, height=650, returned_objects=[])
+            st_folium(mapa, width="100%", height=650, returned_objects=[])
         else:
             st.warning("No hay registros que coincidan con los filtros seleccionados.")
             
@@ -187,7 +217,7 @@ try:
                     text_auto=True
                 )
                 fig_esp.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
-                st.plotly_chart(fig_esp, use_container_width=True)
+                st.plotly_chart(fig_esp, width="100%")
 
         with c2:
             st.markdown("### Top 10 Comunas con Mayor Actividad")
@@ -205,9 +235,9 @@ try:
                     text_auto=True
                 )
                 fig_com.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=450)
-                st.plotly_chart(fig_com, use_container_width=True)
+                st.plotly_chart(fig_com, width="100%")
 
-    # TAB 3: BUSCADOR
+    # TAB 3: BUSCADOR CON FICHA TAXONÓMICA E IMÁGENES EXTERNAS
     with tab3:
         st.subheader("Buscador y Ficha de Especie")
         
@@ -234,22 +264,47 @@ try:
                 df_esp = df[df['NombreComun'] == especie_seleccionada]
                 st.success(f"Mostrando información para **{especie_seleccionada}** ({len(df_esp):,} registros hallados).")
                 
+                # --- FICHA EXTENDIDA (TAXONOMÍA E IMAGEN VÍA GBIF) ---
+                st.markdown("---")
+                st.markdown("### 🧬 Ficha Taxonómica y Registro Fotográfico (GBIF)")
+                tax, img_url = obtener_datos_gbif(especie_seleccionada)
+                
+                col_info_a, col_info_b = st.columns([1, 1])
+                
+                with col_info_a:
+                    if img_url:
+                        st.image(img_url, caption=f"Fotografía de referencia: {especie_seleccionada}", width="100%")
+                    else:
+                        st.info("📷 No se encontró fotografía pública registrada en GBIF para esta especie.")
+                        
+                with col_info_b:
+                    if tax:
+                        st.markdown(f"**Nombre Científico:** *{tax.get('Nombre Científico')}*")
+                        st.markdown(f"• **Reino:** {tax.get('Reino')}")
+                        st.markdown(f"• **Filo:** {tax.get('Filo')}")
+                        st.markdown(f"• **Clase:** {tax.get('Clase')}")
+                        st.markdown(f"• **Orden:** {tax.get('Orden')}")
+                        st.markdown(f"• **Familia:** {tax.get('Familia')}")
+                        st.markdown(f"• **Género:** {tax.get('Género')}")
+                    else:
+                        st.write("Sin datos taxonómicos externos disponibles.")
+                st.markdown("---")
+                
                 col_a, col_b = st.columns([1, 2])
                 
                 with col_a:
                     st.markdown("#### Presencia por Comuna")
                     df_comuna_esp = df_esp['Comuna'].value_counts().reset_index()
                     df_comuna_esp.columns = ['Comuna', 'Registros']
-                    st.dataframe(df_comuna_esp, use_container_width=True, height=200)
+                    st.dataframe(df_comuna_esp, width="100%", height=200)
                     
                     st.markdown("#### Distribución por Región")
                     df_reg_esp = df_esp['Region'].value_counts().reset_index()
                     df_reg_esp.columns = ['Región', 'Registros']
-                    st.dataframe(df_reg_esp, use_container_width=True, height=180)
+                    st.dataframe(df_reg_esp, width="100%", height=180)
 
                 with col_b:
                     st.markdown("#### Ubicación de Avistamientos")
-                    
                     df_esp_geo = df_esp.dropna(subset=['Latitud', 'Longitud'])
                     
                     if len(df_esp_geo) > 0:
@@ -258,14 +313,13 @@ try:
                         zoom_dinamico = 9 if len(df_esp_geo) <= 3 else 6
                         
                         mapa_esp = crear_mapa_folium(df_esp_geo, lat_c, lon_c, zoom_dinamico)
-                        st_folium(mapa_esp, use_container_width=True, height=450, returned_objects=[])
+                        st_folium(mapa_esp, width="100%", height=450, returned_objects=[])
                     else:
                         st.warning("No fue posible ubicar geográficamente este registro.")
 
-                st.markdown("---")
                 st.markdown("#### Detalle de Registros Encontrados")
                 cols_mostrar = [c for c in ['NombreComun', 'Region', 'Comuna', 'TipoEvento', 'Latitud', 'Longitud'] if c in df_esp.columns]
-                st.dataframe(df_esp[cols_mostrar], use_container_width=True)
+                st.dataframe(df_esp[cols_mostrar], width="100%")
 
 except Exception as e:
     st.error(f"Error al cargar la base de datos: {e}")
