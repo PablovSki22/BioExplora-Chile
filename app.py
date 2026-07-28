@@ -10,15 +10,28 @@ st.set_page_config(
 
 @st.cache_data
 def load_data():
-    # Carga ultrarrápida desde Parquet
     df = pd.read_parquet("datos_bioexplora.parquet")
     
-    df['Region'] = df['Region'].astype(str).str.strip().str.title()
-    df['Comuna'] = df['Comuna'].astype(str).str.strip().str.title()
-    df['NombreComun'] = df['NombreComun'].astype(str).str.strip().str.title()
+    # Estandarizar nombres de columnas a minúsculas para evitar mismatches
+    cols = {col: col.strip().lower() for col in df.columns}
+    df = df.rename(columns=cols)
     
-    df['Latitud'] = pd.to_numeric(df['Latitud'], errors='coerce')
-    df['Longitud'] = pd.to_numeric(df['Longitud'], errors='coerce')
+    # Mapeo flexible de columnas
+    region_col = next((c for c in df.columns if 'region' in c), None)
+    comuna_col = next((c for c in df.columns if 'comuna' in c), None)
+    nombre_col = next((c for c in df.columns if 'nombre' in c or 'especie' in c), None)
+    lat_col = next((c for c in df.columns if 'lat' in c), None)
+    lon_col = next((c for c in df.columns if 'lon' in c or 'lng' in c), None)
+    origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
+
+    # Renombrar estandarizado
+    df['Region'] = df[region_col].astype(str).str.strip().str.title() if region_col else "Sin Información"
+    df['Comuna'] = df[comuna_col].astype(str).str.strip().str.title() if comuna_col else "Sin Información"
+    df['NombreComun'] = df[nombre_col].astype(str).str.strip().str.title() if nombre_col else "Sin Información"
+    df['TipoEvento'] = df[origen_col].astype(str).str.strip() if origen_col else "Registro"
+    
+    df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
+    df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
     
     df = df[~df['NombreComun'].isin(['Nan', 'None', '', 'Sin Información', 'Sin Información '])]
     return df
@@ -52,7 +65,7 @@ try:
                 df_sample,
                 lat="Latitud",
                 lon="Longitud",
-                color="TipoEvento_Origen",
+                color="TipoEvento",
                 hover_name="NombreComun",
                 hover_data=["Comuna", "Region"],
                 scope="south america",
@@ -97,7 +110,7 @@ try:
                             df_esp_geo,
                             lat="Latitud",
                             lon="Longitud",
-                            color="TipoEvento_Origen",
+                            color="TipoEvento",
                             hover_name="NombreComun",
                             hover_data=["Comuna", "Region"],
                             scope="south america",
