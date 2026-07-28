@@ -256,13 +256,13 @@ def mostrar_pantalla_login():
 
             st.markdown("---")
             st.markdown("##### O ingresa directamente con Google:")
+            
+            # Ejecución limpia del login nativo de Streamlit
             try:
-                # Intenta llamar a la función nativa de Streamlit
                 st.login("google")
-            except Exception:
-                # Si las credenciales no se han propagado en Streamlit Cloud aún:
-                st.button("🌐 Continuar con Google", disabled=True, help="El servicio de autenticación se está inicializando o requiere ajustar Secrets.")
-                st.info("💡 Configure los secretos de Google Client OAuth en los **Secrets** de Streamlit Cloud para activar este botón.")
+            except Exception as err:
+                st.error(f"⚠️ Error al inicializar autenticación de Google: {err}")
+                st.info("Asegúrese de que el archivo Secrets en Streamlit Cloud contenga las secciones [auth] y [auth.google] correctamente formateadas.")
 
         with tab_registro:
             st.subheader("Crear una nueva cuenta")
@@ -453,7 +453,7 @@ def mostrar_aplicacion_principal():
             st.subheader("📝 Registrar un Nuevo Avistamiento de Biodiversidad")
             
             if st.session_state.tipo_acceso == "Invitado":
-                st.warning("🔒 Los invitados están en modo sólo lectura. Para ingresar datos y subir de nivel, por favor cierra sesión e inicia sesión con una cuenta de usuario.")
+                st.warning("🔒 Los invitados están en modo sólo lectura. Para ingresar datos y subir de level, por favor cierra sesión e inicia sesión con una cuenta de usuario.")
             else:
                 st.markdown("Completa los datos del avistamiento para contribuir a la base científica y subir en el ranking de exploradores.")
                 
