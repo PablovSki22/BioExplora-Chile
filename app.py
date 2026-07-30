@@ -14,6 +14,45 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- ESTILOS CSS: ESCALAMIENTO MULTIDISPOSITIVO Y FONDO DIFUMINADO ESTÉTICO ---
+st.markdown("""
+<style>
+    /* 1. Fondo con imagen difuminada elegante (mantiene todo el contenido intacto) */
+    .stApp {
+        background-image: linear-gradient(rgba(11, 19, 43, 0.90), rgba(11, 19, 43, 0.90)), 
+                          url("https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?auto=format&fit=crop&w=1920&q=80");
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+    }
+
+    /* 2. Escalamiento automático para tablets y dispositivos medianos */
+    @media (max-width: 1024px) {
+        .stApp {
+            padding: 10px !important;
+        }
+    }
+
+    /* 3. Escalamiento automático y apilamiento para teléfonos celulares */
+    @media (max-width: 768px) {
+        .stApp {
+            padding: 5px !important;
+        }
+        [data-testid="column"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+            margin-bottom: 10px;
+        }
+        h1 { font-size: 1.6rem !important; }
+        h2 { font-size: 1.3rem !important; }
+        h3 { font-size: 1.1rem !important; }
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- A PARTIR DE AQUÍ CONTINÚA TU CÓDIGO ORIGINAL (VALIDACIONES, ESTADOS, MAPAS, PESTAÑAS, ETC.) ---
+
 # --- ESTILOS CSS PERSONALIZADOS (MODERN APP UI / TEMA OSCURO CIENTÍFICO) ---
 st.markdown("""
 <style>
