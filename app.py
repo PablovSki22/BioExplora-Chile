@@ -9,6 +9,7 @@ import requests
 import hashlib
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
+from streamlit_google_auth import Authenticate
 
 # --- CONFIGURACIÓN INICIAL DE LA PÁGINA ---
 st.set_page_config(
@@ -128,19 +129,20 @@ def obtener_rango_usuario(cantidad):
     else:
         return "🐣 Observador Inicial", "gray"
 
-# --- DETECCIÓN DE OAUTH PARAMS (GOOGLE CALLBACK) ---
-def verificar_callback_oauth():
-    try:
-        params = st.query_params
-        if "code" in params or "state" in params:
-            # Si Streamlit recibe los parámetros de Google pero no hay configuración interna robusta del componente,
-            # evitamos la pantalla en blanco redirigiendo o extrayendo el correo si viene en el token simulado,
-            # o permitiendo recuperar el flujo de manera limpia.
-            pass
-    except Exception:
-        pass
-
-verificar_callback_oauth()
+# --- CONFIGURACIÓN GOOGLE AUTH (SI ESTÁN PRESENTES LOS SECRETOS) ---
+authenticator = None
+try:
+    if "GOOGLE_CLIENT_ID" in st.secrets and "GOOGLE_CLIENT_SECRET" in st.secrets:
+        authenticator = Authenticate(
+            client_id=st.secrets["GOOGLE_CLIENT_ID"],
+            client_secret=st.secrets["GOOGLE_CLIENT_SECRET"],
+            redirect_uri=st.secrets.get("GOOGLE_REDIRECT_URI", "https://bioexplora-chile.onrender.com"),
+            cookie_key="bioexplora_auth_cookie",
+            cookie_name="bioexplora_cookie",
+            cookie_expiry_days=30
+        )
+except Exception:
+    authenticator = None
 
 # --- EXTRACCIÓN DE GPS DE IMÁGENES (EXIF) ---
 def obtener_coordenadas_exif(image_file):
@@ -333,36 +335,35 @@ def mostrar_pantalla_login():
         with tab_login:
             st.subheader("Acceso para Usuarios Registrados")
             
-            # Botón de Inicio de Sesión con Google OAuth oficial integrado de forma segura
-            if st.button("🔵 Iniciar Sesión con Cuenta Google", use_container_width=True):
+            # --- Opción Google OAuth ---
+            if authenticator:
                 try:
-                    # Intento de redirección segura a proveedor Google OAuth si está configurado en secretos
-                    google_client_id = st.secrets.get("GOOGLE_CLIENT_ID", None)
-                    if google_client_id:
-                        redirect_uri = "https://bioexplora-chile.onrender.com/~/+oauth2callback"
-                        auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={google_client_id}&redirect_uri={redirect_uri}&scope=openid%20email%20profile"
-                        st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">', unsafe_allow_html=True)
-                    else:
-                        # Si no hay secretos externos configurados, simulamos inicio de sesión de Google con el correo principal del usuario de forma directa y fluida
-                        st.session_state.autenticado = True
-                        st.session_state.usuario_actual = "usuario.google@bioexplora.cl"
-                        st.session_state.tipo_acceso = "Registrado"
-                        if "usuario.google@bioexplora.cl" not in st.session_state.perfiles_usuarios:
-                            st.session_state.perfiles_usuarios["usuario.google@bioexplora.cl"] = {
-                                "nombre": "Naturalista Google",
-                                "bio": "Conectado mediante cuenta de Google.",
-                                "instagram": "",
-                                "avatar": None
-                            }
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Error al conectar con Google OAuth: {e}")
+                    authenticator.login()
+                    if st.session_state.get('connected', False):
+                        email_google = st.session_state.get('user_info', {}).get('email')
+                        nombre_google = st.session_state.get('user_info', {}).get('name', 'Usuario Google')
+                        if email_google:
+                            st.session_state.autenticado = True
+                            st.session_state.usuario_actual = email_google
+                            st.session_state.tipo_acceso = "Registrado"
+                            if email_google not in st.session_state.perfiles_usuarios:
+                                st.session_state.perfiles_usuarios[email_google] = {
+                                    "nombre": nombre_google,
+                                    "bio": "Naturalista conectado mediante Google.",
+                                    "instagram": "",
+                                    "avatar": None
+                                }
+                            st.rerun()
+                except Exception:
+                    pass
+            else:
+                st.info("💡 Para habilitar el botón oficial de Google, configura los secretos GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET en tu plataforma.")
 
             st.markdown("---")
             email_login = st.text_input("Correo Electrónico", key="login_email")
             pass_login = st.text_input("Contraseña", type="password", key="login_pass")
             
-            if st.button("Ingresar con credenciales", use_container_width=True, type="primary"):
+            if st.button("Ingresar con Credenciales", use_container_width=True, type="primary"):
                 hashed = hash_pass(pass_login)
                 if email_login in st.session_state.bd_usuarios and st.session_state.bd_usuarios[email_login] == hashed:
                     st.session_state.autenticado = True
@@ -409,7 +410,10 @@ def mostrar_pantalla_login():
 def mostrar_aplicacion_principal():
     usr_actual = st.session_state.usuario_actual
     perfil_actual = st.session_state.perfiles_usuarios.get(usr_actual, {
-        "nombre": usr_actual, "bio": "Sin biografía", "instagram": "", "avatar": None
+        "nombre": usr_actual.split("@")[0].title() if "@" in usr_actual else usr_actual, 
+        "bio": "Sin biografía", 
+        "instagram": "", 
+        "avatar": None
     })
 
     with st.sidebar:
@@ -431,6 +435,11 @@ def mostrar_aplicacion_principal():
 
         st.markdown("---")
         if st.button("🚪 Cerrar Sesión", use_container_width=True):
+            if authenticator and authenticator.get_authorization_url():
+                try:
+                    authenticator.logout()
+                except Exception:
+                    pass
             st.session_state.autenticado = False
             st.session_state.usuario_actual = None
             st.session_state.tipo_acceso = None
