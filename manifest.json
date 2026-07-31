@@ -14,9 +14,14 @@
   "categories": ["education", "science", "utilities"],
   "icons": [
     {
-      "src": "https://raw.githubusercontent.com/PablovSki22/BioExplora-Chile/main/favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
+      "src": "https://www.pwabuilder.com/assets/icons/icon_192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://www.pwabuilder.com/assets/icons/icon_512.png",
+      "sizes": "512x512",
+      "type": "image/png"
     }
   ]
 }
