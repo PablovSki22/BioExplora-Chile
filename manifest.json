@@ -14,12 +14,12 @@
   "categories": ["education", "science", "utilities"],
   "icons": [
     {
-      "src": "https://www.pwabuilder.com/assets/icons/icon_192.png",
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAAGRPKlAAAANaklEQVR4Xu3BAQ0AAADCoPdP7Q8IAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPgaZ2wAATWc9C0AAAAASUVORK5CYII=",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://www.pwabuilder.com/assets/icons/icon_512.png",
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAAGRPKlAAAANaklEQVR4Xu3BAQ0AAADCoPdP7Q8IAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPgaZ2wAATWc9C0AAAAASUVORK5CYII=",
       "sizes": "512x512",
       "type": "image/png"
     }
