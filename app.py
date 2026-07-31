@@ -13,6 +13,15 @@ st.set_page_config(
     page_icon="🌿",
     layout="wide"
 )
+st.markdown("""
+<link rel="manifest" href="manifest.json">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => console.log('Service Worker registrado correctamente.'));
+  }
+</script>
+""", unsafe_allow_html=True)
 
 # --- ESTILOS CSS: ESCALAMIENTO MULTIDISPOSITIVO Y FONDO DIFUMINADO ESTÉTICO ---
 st.markdown("""
