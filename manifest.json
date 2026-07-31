@@ -1,21 +1,21 @@
 {
-  "name": "BioExplora Chile",
   "short_name": "BioExplora Chile",
-  "start_url": "/",
-  "scope": "/",
-  "id": "/?source=pwa",
-  "display": "standalone",
-  "background_color": "#0b132b",
-  "theme_color": "#0b132b",
-  "description": "Aplicación interactiva para la exploración y análisis de la biodiversidad en Chile.",
-  "orientation": "any",
-  "dir": "ltr",
-  "lang": "es",
+  "name": "BioExplora Chile",
   "icons": [
     {
       "src": "favicon_512.png",
       "type": "image/png",
       "sizes": "512x512"
     }
-  ]
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0b132b",
+  "background_color": "#0b132b",
+  "dir": "ltr",
+  "scope": "/",
+  "lang": "es",
+  "orientation": "any",
+  "description": "Aplicación interactiva para la exploración y análisis de la biodiversidad en Chile.",
+  "id": "/?source=pwa"
 }
