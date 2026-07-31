@@ -1,4 +1,11 @@
 import streamlit as st
+
+st.set_page_config(
+    page_title="BioExplora Chile",
+    page_icon="🌿",
+    layout="wide"
+)
+
 import pandas as pd
 import plotly.express as px
 import folium
@@ -7,26 +14,6 @@ import requests
 import hashlib
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
-
-st.set_page_config(
-    page_title="BioExplora Chile",
-    page_icon="🌿",
-    layout="wide"
-)
-st.markdown("""
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#0b132b">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="BioExplora Chile">
-<link rel="apple-touch-icon" href="favicon_512.png">
-<script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js')
-      .then(() => console.log('Service Worker registrado correctamente.'));
-  }
-</script>
-""", unsafe_allow_html=True)
 
 # --- ESTILOS CSS: ESCALAMIENTO MULTIDISPOSITIVO Y FONDO DIFUMINADO ESTÉTICO ---
 st.markdown("""
