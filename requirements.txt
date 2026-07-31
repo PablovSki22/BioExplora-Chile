@@ -6,4 +6,4 @@ streamlit-folium
 requests
 Pillow
 pyarrow
-fastparquet
+streamlit-google-auth
