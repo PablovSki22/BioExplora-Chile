@@ -7,6 +7,8 @@ import requests
 import hashlib
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
+import gc
+gc.collect()
 
 st.set_page_config(
     page_title="BioExplora Chile",
@@ -294,17 +296,43 @@ def obtener_nombre_cientifico_resuelto(nombre_ingresado):
     limpio = str(nombre_ingresado).strip().lower()
     return MAPEO_NOMBRES_CIENTIFICOS.get(limpio, nombre_ingresado)
 
-@st.cache_data(max_entries=2, show_spinner=False)
+@st.cache_data(max_entries=1, show_spinner=False)
 def load_base_data():
     try:
         df_raw = pd.read_parquet("datos_bioexplora_light.parquet")
     except Exception:
         df_raw = pd.read_parquet("datos_bioexplora.parquet")
-
+        
     df = pd.DataFrame()
     for col in df_raw.columns:
-        df[str(col).strip().lower()] = df_raw[col].astype(str)
+        col_lower = str(col).strip().lower()
+        if col_lower in ['latitud', 'longitud', 'lat', 'lon']:
+            df[col_lower] = pd.to_numeric(df_raw[col], errors='coerce')
+        else:
+            df[col_lower] = df_raw[col].astype(str)
 
+    region_col = next((c for c in df.columns if 'region' in c), None)
+    comuna_col = next((c for c in df.columns if 'comuna' in c), None)
+    nombre_col = next((c for c in df.columns if 'nombre' in c or 'especie' in c or 'taxa' in c), None)
+    lat_col = next((c for c in df.columns if any(term in c for term in ['lat', 'y_coord', 'y'])), None)
+    lon_col = next((c for c in df.columns if any(term in c for term in ['lon', 'lng', 'x_coord', 'x'])), None)
+    origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
+
+    df['Region'] = df[region_col].str.strip().str.title() if region_col else "Sin Información"
+    df['Comuna'] = df[comuna_col].str.strip().str.title() if comuna_col else "Sin Información"
+    df['NombreComun'] = df[nombre_col].str.strip().str.title() if nombre_col else "Especie No Especificada"
+    df['TipoEvento'] = df[origen_col].str.strip() if origen_col else "Registro"
+
+    invalid_values = ['nan', 'none', '', 'null', 'sin informacion', 'sin información', '<na>']
+    df['NombreComun'] = df['NombreComun'].apply(lambda x: 'Especie No Especificada' if str(x).lower() in invalid_values else x)
+    df['Region'] = df['Region'].apply(lambda x: 'Sin Información' if str(x).lower() in invalid_values else x)
+    df['Comuna'] = df['Comuna'].apply(lambda x: 'Sin Información' if str(x).lower() in invalid_values else x)
+
+    df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
+    df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
+
+    return df
+    
     region_col = next((c for c in df.columns if 'region' in c), None)
     comuna_col = next((c for c in df.columns if 'comuna' in c), None)
     nombre_col = next((c for c in df.columns if 'nombre' in c or 'especie' in c or 'taxa' in c), None)
