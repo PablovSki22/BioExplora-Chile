@@ -331,6 +331,10 @@ def load_base_data():
     df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
     df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
 
+    df['Latitud'] = pd.to_numeric(df['Latitud'], errors='coerce')
+    df['Longitud'] = pd.to_numeric(df['Longitud'], errors='coerce')
+    df = df.dropna(subset=['Latitud', 'Longitud'])
+
     return df
     
     region_col = next((c for c in df.columns if 'region' in c), None)
