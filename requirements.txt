@@ -1,5 +1,5 @@
 streamlit>=1.35.0
-Authlib>=1.3.2
+streamlit-google-auth
 pandas
 plotly
 folium
@@ -8,4 +8,3 @@ requests
 pyarrow
 Pillow
 authlib
-httpx
