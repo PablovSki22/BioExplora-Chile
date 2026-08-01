@@ -340,6 +340,12 @@ def load_base_data():
         df['Longitud'].between(-76.0, -66.0)
     )
 
+    # Filtrar coordenadas válidas para excluir puntos fuera de Chile o nulos del mar
+    df['Valido_Mapa'] = (
+        df['Latitud'].between(-56.5, -17.5) & 
+        df['Longitud'].between(-76.0, -66.0)
+    )
+    
     return df
     
     region_col = next((c for c in df.columns if 'region' in c), None)
