@@ -294,9 +294,13 @@ def obtener_nombre_cientifico_resuelto(nombre_ingresado):
     limpio = str(nombre_ingresado).strip().lower()
     return MAPEO_NOMBRES_CIENTIFICOS.get(limpio, nombre_ingresado)
 
-@st.cache_data
+@st.cache_data(max_entries=2, show_spinner=False)
 def load_base_data():
-    df_raw = pd.read_parquet("datos_bioexplora_light.parquet")
+    try:
+        df_raw = pd.read_parquet("datos_bioexplora_light.parquet")
+    except Exception:
+        df_raw = pd.read_parquet("datos_bioexplora.parquet")
+
     df = pd.DataFrame()
     for col in df_raw.columns:
         df[str(col).strip().lower()] = df_raw[col].astype(str)
