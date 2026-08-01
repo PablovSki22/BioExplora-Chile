@@ -16,39 +16,30 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- ESTILOS CSS PERSONALIZADOS (MODERN APP UI / TEMA OSCURO CIENTÍFICO) ---
+# --- ESTILOS CSS PERSONALIZADOS ---
 st.markdown("""
 <style>
-    /* Fondo general de la aplicación estilo App de Monitoreo */
     .stApp {
         background-color: #0b132b;
         color: #e2e8f0;
     }
-    
-    /* Forzar tipografía clara en textos generales */
     p, span, label, div {
         color: #cbd5e1;
     }
-
     h1, h2, h3, h4, h5, h6 {
         color: #f8fafc !important;
     }
-
-    /* Contenedores principales (Tarjetas flotantes) */
     div.stMarkdown, div.stForm, div.stTabs {
         background-color: #1c2541;
         border-radius: 12px;
         padding: 5px;
     }
-
-    /* Pestañas de navegación estilizadas */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
         background-color: #0b132b;
         padding: 10px;
         border-radius: 10px;
     }
-
     .stTabs [data-baseweb="tab"] {
         background-color: #1c2541;
         border-radius: 8px;
@@ -56,14 +47,11 @@ st.markdown("""
         font-weight: 600;
         border: 1px solid #3a506b;
     }
-
     .stTabs [aria-selected="true"] {
         background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
         color: white !important;
         border: none !important;
     }
-
-    /* Botones principales con aspecto de aplicación moderna */
     div.stButton > button {
         background: linear-gradient(135deg, #10b981 0%, #059669 100%);
         color: white;
@@ -74,48 +62,35 @@ st.markdown("""
         box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3);
         transition: all 0.3s ease;
     }
-    
     div.stButton > button:hover {
         background: linear-gradient(135deg, #059669 0%, #047857 100%);
-        box-shadow: 0 8px 12px -2px rgba(16, 185, 129, 0.4);
         transform: translateY(-2px);
     }
-    
-    /* Tarjetas de Métricas con relieve oscuro */
     div[data-testid="stMetric"] {
         background-color: #1c2541;
         padding: 16px;
         border-radius: 12px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
         border: 1px solid #3a506b;
     }
-    
     div[data-testid="stMetric"] label {
         color: #94a3b8 !important;
     }
-
     div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
         color: #38bdf8 !important;
         font-weight: 700;
     }
-
-    /* Cajas de alerta / Info */
     div.stAlert {
         background-color: #1c2541;
         border: 1px solid #3a506b;
         border-radius: 10px;
         color: #e2e8f0;
     }
-    
-    /* Inputs, Selectbox y Textarea */
     div.stTextInput > div > div > input, div.stSelectbox > div > div > div, div.stTextArea > div > div > textarea {
         background-color: #0b132b;
         color: #f8fafc;
         border-radius: 8px;
         border: 1px solid #3a506b;
     }
-    
-    /* Sidebar con diseño de panel de control */
     section[data-testid="stSidebar"] {
         background-color: #0b132b;
         border-right: 1px solid #1c2541;
@@ -123,7 +98,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- VERIFICACIÓN Y CONTROL DE SESIÓN GOOGLE NATIVA (ROBUSTO) ---
+# --- VERIFICACIÓN Y CONTROL DE SESIÓN ---
 is_logged_in_google = False
 google_email = None
 user_obj = None
@@ -169,7 +144,9 @@ if "conteo_avistamientos" not in st.session_state:
 if "df_pendientes_revision" not in st.session_state:
     st.session_state.df_pendientes_revision = pd.DataFrame(columns=['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud', 'AportadoPor', 'Notas', 'Estado'])
 
-# Si Google confirmó login
+if "df_nuevos_registros" not in st.session_state:
+    st.session_state.df_nuevos_registros = pd.DataFrame(columns=['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud', 'AportadoPor'])
+
 if is_logged_in_google:
     st.session_state.autenticado = True
     st.session_state.usuario_actual = google_email
@@ -204,14 +181,12 @@ def obtener_rango_usuario(cantidad):
     else:
         return "🐣 Observador Inicial", "gray"
 
-# --- EXTRACCIÓN DE GPS DE IMÁGENES (EXIF) ---
 def obtener_coordenadas_exif(image_file):
     try:
         image = Image.open(image_file)
         exif_data = image._getexif()
         if not exif_data:
             return None, None
-
         gps_info = {}
         for tag_id, value in exif_data.items():
             tag = TAGS.get(tag_id, tag_id)
@@ -219,7 +194,6 @@ def obtener_coordenadas_exif(image_file):
                 for t in value:
                     sub_tag = GPSTAGS.get(t, t)
                     gps_info[sub_tag] = value[t]
-
         if not gps_info:
             return None, None
 
@@ -232,11 +206,9 @@ def obtener_coordenadas_exif(image_file):
         lat = convertir_a_grados(gps_info['GPSLatitude'])
         if gps_info.get('GPSLatitudeRef') != 'N':
             lat = -lat
-
         lon = convertir_a_grados(gps_info['GPSLongitude'])
         if gps_info.get('GPSLongitudeRef') != 'E':
             lon = -lon
-
         return lat, lon
     except Exception:
         return None, None
@@ -275,18 +247,11 @@ COORDENADAS_REGIONES = {
 }
 
 MAPEO_NOMBRES_CIENTIFICOS = {
-    "ranita de antifaz": "Batrachyla taeniata",
-    "ranita antifaz": "Batrachyla taeniata",
-    "ranita de hojarasca": "Batrachyla leptopus",
-    "sapito 4 ojos": "Pleurodema thaul",
-    "ranita de darwin": "Rhinoderma darwinii",
-    "zorro culpeo": "Lycalopex culpaeus",
-    "puma": "Puma concolor",
-    "huemul": "Hippocamelus bisulcus",
-    "pudú": "Pudu puda",
-    "cóndor andino": "Vultur gryphus",
-    "condor": "Vultur gryphus",
-    "loica": "Leistes loyca",
+    "ranita de antifaz": "Batrachyla taeniata", "ranita antifaz": "Batrachyla taeniata",
+    "ranita de hojarasca": "Batrachyla leptopus", "sapito 4 ojos": "Pleurodema thaul",
+    "ranita de darwin": "Rhinoderma darwinii", "zorro culpeo": "Lycalopex culpaeus",
+    "puma": "Puma concolor", "huemul": "Hippocamelus bisulcus", "pudú": "Pudu puda",
+    "cóndor andino": "Vultur gryphus", "condor": "Vultur gryphus", "loica": "Leistes loyca",
     "chucao": "Scelorchilus rubecula"
 }
 
@@ -331,43 +296,6 @@ def load_base_data():
     df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
     df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
 
-    df['Latitud'] = pd.to_numeric(df['Latitud'], errors='coerce')
-    df['Longitud'] = pd.to_numeric(df['Longitud'], errors='coerce')    
-
-    # Filtrar coordenadas válidas exclusivas para los mapas (Chile continental e insular aproximado)
-    df['Valido_Mapa'] = (
-        df['Latitud'].between(-56.5, -17.5) & 
-        df['Longitud'].between(-76.0, -66.0)
-    )
-
-    # Filtrar coordenadas válidas para excluir puntos fuera de Chile o nulos del mar
-    df['Valido_Mapa'] = (
-        df['Latitud'].between(-56.5, -17.5) & 
-        df['Longitud'].between(-76.0, -66.0)
-    )
-    
-    return df
-    
-    region_col = next((c for c in df.columns if 'region' in c), None)
-    comuna_col = next((c for c in df.columns if 'comuna' in c), None)
-    nombre_col = next((c for c in df.columns if 'nombre' in c or 'especie' in c or 'taxa' in c), None)
-    lat_col = next((c for c in df.columns if any(term in c for term in ['lat', 'y_coord', 'y'])), None)
-    lon_col = next((c for c in df.columns if any(term in c for term in ['lon', 'lng', 'x_coord', 'x'])), None)
-    origen_col = next((c for c in df.columns if 'origen' in c or 'tipo' in c or 'evento' in c), None)
-
-    df['Region'] = df[region_col].str.strip().str.title() if region_col else "Sin Información"
-    df['Comuna'] = df[comuna_col].str.strip().str.title() if comuna_col else "Sin Información"
-    df['NombreComun'] = df[nombre_col].str.strip().str.title() if nombre_col else "Especie No Especificada"
-    df['TipoEvento'] = df[origen_col].str.strip() if origen_col else "Registro"
-
-    invalid_values = ['nan', 'none', '', 'null', 'sin informacion', 'sin información', '<na>']
-    df['NombreComun'] = df['NombreComun'].apply(lambda x: 'Especie No Especificada' if str(x).lower() in invalid_values else x)
-    df['Region'] = df['Region'].apply(lambda x: 'Sin Información' if str(x).lower() in invalid_values else x)
-    df['Comuna'] = df['Comuna'].apply(lambda x: 'Sin Información' if str(x).lower() in invalid_values else x)
-
-    df['Latitud'] = pd.to_numeric(df[lat_col], errors='coerce') if lat_col else None
-    df['Longitud'] = pd.to_numeric(df[lon_col], errors='coerce') if lon_col else None
-
     def obtener_lat(row):
         lat = row['Latitud']
         if pd.notnull(lat) and lat != 0:
@@ -386,11 +314,12 @@ def load_base_data():
 
     df['Latitud'] = df.apply(obtener_lat, axis=1)
     df['Longitud'] = df.apply(obtener_lon, axis=1)
+    
+    # Rellenar cualquier NaN remanente para evitar errores en componentes
+    df['Latitud'] = df['Latitud'].fillna(-33.4489)
+    df['Longitud'] = df['Longitud'].fillna(-70.6693)
 
     return df
-
-if "df_nuevos_registros" not in st.session_state:
-    st.session_state.df_nuevos_registros = pd.DataFrame(columns=['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud', 'AportadoPor'])
 
 def get_complete_data():
     base_df = load_base_data()
@@ -405,7 +334,6 @@ def obtener_datos_gbif(nombre_especie):
     nombre_query = obtener_nombre_cientifico_resuelto(nombre_especie)
     url = f"https://api.gbif.org/v1/species/match?name={nombre_query}"
     taxonomia, imagen_url = None, None
-    
     try:
         res = requests.get(url, timeout=4)
         if res.status_code == 200:
@@ -434,14 +362,6 @@ def obtener_datos_gbif(nombre_especie):
     except Exception:
         pass
     return taxonomia, imagen_url
-
-# Filtrar coordenadas válidas para excluir puntos fuera de Chile o nulos del mar
-    df['Valido_Mapa'] = (
-        df['Latitud'].between(-56.5, -17.5) & 
-        df['Longitud'].between(-76.0, -66.0)
-    )
-    
-    return df
 
 def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
     m = folium.Map(location=[lat_centro, lon_centro], zoom_start=zoom, tiles="CartoDB dark_matter")
@@ -514,7 +434,6 @@ def mostrar_pantalla_login():
     st.markdown("---")
 
     col1, col2, col3 = st.columns([1, 2, 1])
-
     with col2:
         tab_login, tab_registro, tab_invitado = st.tabs(["🔐 Iniciar Sesión", "📝 Crear Cuenta", "👤 Acceso Invitado"])
 
@@ -534,8 +453,6 @@ def mostrar_pantalla_login():
                     st.error("Credenciales incorrectas. Verifique correo y contraseña.")
 
             st.markdown("---")
-            st.markdown("##### O ingresa directamente con Google:")
-            
             if st.button("🌐 Continuar con Google", use_container_width=True):
                 try:
                     st.login("google")
@@ -561,11 +478,7 @@ def mostrar_pantalla_login():
                     st.session_state.perfiles_usuarios[nuevo_email] = {
                         "nombre": nuevo_email.split("@")[0].title(),
                         "bio": "Entusiasta de la naturaleza.",
-                        "edad": "",
-                        "genero": "Prefiero no decirlo",
-                        "instagram": "",
-                        "facebook": "",
-                        "avatar": None
+                        "edad": "", "genero": "Prefiero no decirlo", "instagram": "", "facebook": "", "avatar": None
                     }
                     st.success("¡Cuenta creada exitosamente! Ya puede iniciar sesión.")
 
@@ -625,30 +538,30 @@ def mostrar_aplicacion_principal():
     try:
         df = get_complete_data()
         
-        tabs_lista = [
-            "📌 Mapa Geográfico", 
-            "📊 Estadísticas", 
-            "🔍 Buscador de Especies",
-            "📝 Reportar Avistamiento"
-        ]
+        # Generar pestañas de forma robusta según tipo de usuario
         if st.session_state.tipo_acceso == "Registrado":
-            tabs_lista.append("⚙️ Mi Perfil")
-
-        tabs_creados = st.tabs(tabs_lista)
-        tab1 = tabs_creados[0]
-        tab2 = tabs_creados[1]
-        tab3 = tabs_creados[2]
-        tab4 = tabs_creados[3]
-        tab_perfil = tabs_creados[4] if len(tabs_creados) > 4 else None
+            tab1, tab2, tab3, tab4, tab_perfil = st.tabs([
+                "📌 Mapa Geográfico", 
+                "📊 Estadísticas", 
+                "🔍 Buscador de Especies",
+                "📝 Reportar Avistamiento",
+                "⚙️ Mi Perfil"
+            ])
+        else:
+            tab1, tab2, tab3, tab4 = st.tabs([
+                "📌 Mapa Geográfico", 
+                "📊 Estadísticas", 
+                "🔍 Buscador de Especies",
+                "📝 Reportar Avistamiento"
+            ])
+            tab_perfil = None
 
         with tab1:
             st.subheader("Filtros del Mapa")
             c_reg, c_est = st.columns(2)
-            
             with c_reg:
                 regiones = ["Todas"] + sorted([r for r in df['Region'].unique() if r not in ['Sin Información']])
                 selected_region = st.selectbox("Seleccione Región:", regiones)
-                
             with c_est:
                 filtro_identificacion = st.radio(
                     "Estado de Identificación:",
@@ -659,7 +572,6 @@ def mostrar_aplicacion_principal():
             df_map = df.dropna(subset=['Latitud', 'Longitud'])
             if selected_region != "Todas":
                 df_map = df_map[df_map['Region'] == selected_region]
-                
             if filtro_identificacion == "Solo Identificadas":
                 df_map = df_map[df_map['NombreComun'] != 'Especie No Especificada']
             elif filtro_identificacion == "No Identificadas":
@@ -671,7 +583,6 @@ def mostrar_aplicacion_principal():
                 lat_center = df_map['Latitud'].mean()
                 lon_center = df_map['Longitud'].mean()
                 zoom_level = 4 if selected_region == "Todas" else 7
-
                 mapa = crear_mapa_folium(df_map, lat_center, lon_center, zoom_level)
                 st_folium(mapa, use_container_width=True, height=600, returned_objects=[])
             else:
@@ -686,24 +597,18 @@ def mostrar_aplicacion_principal():
             
             st.markdown("---")
             c1, c2 = st.columns(2)
-            
             with c1:
                 st.markdown("### Top 10 Especies Más Frecuentes")
                 df_esp_chart = df[df['NombreComun'] != 'Especie No Especificada']['NombreComun'].value_counts().head(10).reset_index()
                 df_esp_chart.columns = ['Especie', 'Cantidad']
-                
                 if not df_esp_chart.empty:
                     fig_esp = px.bar(
                         df_esp_chart, x='Cantidad', y='Especie',
                         orientation='h', color='Cantidad', color_continuous_scale='Greens', text_auto=True
                     )
                     fig_esp.update_layout(
-                        yaxis={'categoryorder': 'total ascending'}, 
-                        showlegend=False, 
-                        height=400,
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        font=dict(color='#cbd5e1')
+                        yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=400,
+                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#cbd5e1')
                     )
                     st.plotly_chart(fig_esp, use_container_width=True)
 
@@ -711,26 +616,20 @@ def mostrar_aplicacion_principal():
                 st.markdown("### Top 10 Comunas con Mayor Actividad")
                 df_com_chart = df['Comuna'].value_counts().head(10).reset_index()
                 df_com_chart.columns = ['Comuna', 'Cantidad']
-                
                 if not df_com_chart.empty:
                     fig_com = px.bar(
                         df_com_chart, x='Cantidad', y='Comuna',
                         orientation='h', color='Cantidad', color_continuous_scale='Teal', text_auto=True
                     )
                     fig_com.update_layout(
-                        yaxis={'categoryorder': 'total ascending'}, 
-                        showlegend=False, 
-                        height=400,
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        font=dict(color='#cbd5e1')
+                        yaxis={'categoryorder': 'total ascending'}, showlegend=False, height=400,
+                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#cbd5e1')
                     )
                     st.plotly_chart(fig_com, use_container_width=True)
 
         with tab3:
             st.subheader("Buscador y Ficha de Especie")
             col_search1, col_search2 = st.columns([1, 1])
-            
             with col_search1:
                 busqueda = st.text_input("1. Buscar por palabra o fragmento de nombre:", "ranita")
             
@@ -759,7 +658,6 @@ def mostrar_aplicacion_principal():
                             st.image(img_url, caption=f"Fotografía: {especie_seleccionada}", use_container_width=True)
                         else:
                             st.info("📷 No hay fotografía disponible.")
-                            
                     with col_info_b:
                         if tax:
                             st.markdown(f"**Nombre Científico:** *{tax.get('Nombre Científico')}*")
@@ -773,54 +671,44 @@ def mostrar_aplicacion_principal():
 
                     st.markdown("---")
                     st.markdown("### 🗺️ Mapa de Contraste: Distribución de la Especie vs. Resto de Registros")
-                    st.info("🔴 Puntos rojos: Avistamientos de esta especie. ⚫ Puntos grises: Resto de registros en Chile.")
                     mapa_especie = crear_mapa_contraste_especie(df, df_esp)
                     st_folium(mapa_especie, use_container_width=True, height=500, returned_objects=[])
 
         with tab4:
             st.subheader("📝 Registrar un Nuevo Avistamiento de Biodiversidad")
-            
             if st.session_state.tipo_acceso == "Invitado":
-                st.warning("🔒 Los invitados están en modo sólo lectura. Para ingresar datos y subir de nivel, por favor cierra sesión e inicia sesión con una cuenta de usuario.")
+                st.warning("🔒 Los invitados están en modo sólo lectura. Inicia sesión con una cuenta para reportar avistamientos.")
             else:
-                st.markdown("Sube una foto del avistamiento (**con GPS activado en tu cámara**) o indica la comuna. El registro pasará primero por una **fase de revisión y clasificación** en tu perfil.")
-                
+                st.markdown("Sube una foto del avistamiento (**con GPS activado en tu cámara**) o indica la comuna.")
                 with st.form("form_avistamiento"):
                     col_f1, col_f2 = st.columns(2)
-                    
                     with col_f1:
-                        input_especie = st.text_input("Especie observada (Nombre común o científico):", placeholder="Ej: Ranita de Antafaz, Pudú, Cóndor")
+                        input_especie = st.text_input("Especie observada:", placeholder="Ej: Pudú, Cóndor")
                         lista_regiones = sorted(list(COORDENADAS_REGIONES.keys()))
                         input_region = st.selectbox("Región:", lista_regiones)
-                        input_comuna = st.text_input("Comuna:", placeholder="Ej: San Pablo, Hualpén")
-                        
+                        input_comuna = st.text_input("Comuna:", placeholder="Ej: San Pablo")
                     with col_f2:
                         foto_avistamiento = st.file_uploader("📷 Subir Fotografía (Extrae GPS automático)", type=["jpg", "jpeg", "png"])
-                        input_notas = st.text_area("Notas / Observaciones de campo:", placeholder="Ej: Observado cerca de estero al atardecer.")
+                        input_notas = st.text_area("Notas / Observaciones de campo:")
                     
                     btn_guardar = st.form_submit_button("📥 Enviar a Revisión", type="primary", use_container_width=True)
-                    
                     if btn_guardar:
                         if not input_especie.strip() or not input_comuna.strip():
                             st.error("Por favor completa al menos la especie y la comuna.")
                         else:
-                            nom_especie_limpio = input_especie.strip().title()
-                            comuna_limpia = input_comuna.strip().title()
-                            
                             lat_exif, lon_exif = None, None
                             if foto_avistamiento is not None:
                                 lat_exif, lon_exif = obtener_coordenadas_exif(foto_avistamiento)
-
                             if lat_exif and lon_exif:
                                 lat_final, lon_final = lat_exif, lon_exif
                             else:
-                                lat_final = COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[0]
-                                lon_final = COORDENADAS_COMUNAS.get(comuna_limpia, COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[1]
+                                lat_final = COORDENADAS_COMUNAS.get(input_comuna.strip().title(), COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[0]
+                                lon_final = COORDENADAS_COMUNAS.get(input_comuna.strip().title(), COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[1]
                             
                             nuevo_pendiente = pd.DataFrame([{
                                 'Region': input_region,
-                                'Comuna': comuna_limpia,
-                                'NombreComun': nom_especie_limpio,
+                                'Comuna': input_comuna.strip().title(),
+                                'NombreComun': input_especie.strip().title(),
                                 'TipoEvento': 'Aporte Comunitario',
                                 'Latitud': lat_final,
                                 'Longitud': lon_final,
@@ -828,49 +716,37 @@ def mostrar_aplicacion_principal():
                                 'Notas': input_notas,
                                 'Estado': 'Pendiente de Revisión'
                             }])
-                            
                             st.session_state.df_pendientes_revision = pd.concat([st.session_state.df_pendientes_revision, nuevo_pendiente], ignore_index=True)
-                            st.success("📝 ¡Avistamiento guardado en fase de revisión! Ve a tu sección **Mi Perfil** para validarlo y publicarlo.")
+                            st.success("📝 ¡Avistamiento guardado en fase de revisión! Ve a tu sección **Mi Perfil** para validarlo.")
 
         if tab_perfil and st.session_state.tipo_acceso == "Registrado":
             with tab_perfil:
                 st.subheader("⚙️ Configuración y Personalización del Perfil")
-                
                 col_p1, col_p2 = st.columns([1, 2])
                 with col_p1:
                     if perfil_actual.get('avatar') is not None:
                         st.image(perfil_actual.get('avatar'), caption="Tu Foto de Perfil", use_container_width=True)
                     else:
                         st.info("📷 Sin foto de perfil cargada.")
-                
                 with col_p2:
                     with st.form("form_perfil"):
                         nuevo_nombre_publico = st.text_input("Nombre Público / Alias:", value=perfil_actual.get("nombre", ""))
                         nueva_bio = st.text_area("Biografía o Descripción personal:", value=perfil_actual.get("bio", ""))
-                        
                         c_edad, c_gen = st.columns(2)
                         with c_edad:
-                            edad_actual = perfil_actual.get("edad", "")
-                            nueva_edad = st.text_input("Edad:", value=str(edad_actual) if edad_actual else "")
+                            nueva_edad = st.text_input("Edad:", value=str(perfil_actual.get("edad", "")))
                         with c_gen:
                             opciones_genero = ["Prefiero no decirlo", "Masculino", "Femenino", "Otro"]
                             gen_guardado = perfil_actual.get("genero", "Prefiero no decirlo")
                             idx_gen = opciones_genero.index(gen_guardado) if gen_guardado in opciones_genero else 0
                             nuevo_genero = st.selectbox("Género:", opciones_genero, index=idx_gen)
-
-                        st.markdown("##### 🔗 Redes Sociales y Enlaces")
-                        c_ig, c_fb = st.columns(2)
-                        with c_ig:
-                            nuevo_ig = st.text_input("Usuario de Instagram (ej: usuario_cl):", value=perfil_actual.get("instagram", ""))
-                        with c_fb:
-                            nuevo_fb = st.text_input("Perfil de Facebook (URL o nombre):", value=perfil_actual.get("facebook", ""))
-
-                        nueva_foto_avatar = st.file_uploader("Actualizar Fotografía de Perfil:", type=["jpg", "jpeg", "png"])
+                        
+                        nuevo_ig = st.text_input("Instagram:", value=perfil_actual.get("instagram", ""))
+                        nuevo_fb = st.text_input("Facebook:", value=perfil_actual.get("facebook", ""))
+                        nueva_foto_avatar = st.file_uploader("Actualizar Avatar:", type=["jpg", "jpeg", "png"])
                         
                         btn_guardar_perfil = st.form_submit_button("💾 Guardar Cambios de Perfil", type="primary", use_container_width=True)
-                        
                         if btn_guardar_perfil:
-                            avatar_a_guardar = nueva_foto_avatar if nueva_foto_avatar is not None else perfil_actual.get('avatar')
                             st.session_state.perfiles_usuarios[usr_actual] = {
                                 "nombre": nuevo_nombre_publico.strip() or usr_actual,
                                 "bio": nueva_bio.strip(),
@@ -878,78 +754,54 @@ def mostrar_aplicacion_principal():
                                 "genero": nuevo_genero,
                                 "instagram": nuevo_ig.strip().replace("@", ""),
                                 "facebook": nuevo_fb.strip(),
-                                "avatar": avatar_a_guardar
+                                "avatar": nueva_foto_avatar if nueva_foto_avatar is not None else perfil_actual.get('avatar')
                             }
                             st.success("¡Perfil actualizado correctamente!")
                             st.rerun()
 
                 st.markdown("---")
                 st.markdown("### 📥 Bandeja de Revisión y Clasificación de Avistamientos")
-                st.write("Clasifica o ajusta tus registros pendientes antes de publicarlos oficialmente en el mapa general del portal.")
-                
                 mis_pendientes = st.session_state.df_pendientes_revision[
                     (st.session_state.df_pendientes_revision['AportadoPor'] == usr_actual) & 
                     (st.session_state.df_pendientes_revision['Estado'] == 'Pendiente de Revisión')
                 ]
-                
                 if not mis_pendientes.empty:
                     for idx, row in mis_pendientes.iterrows():
-                        with st.expander(f"🔍 Revisar: {row['NombreComun']} ({row['Comuna']}, {row['Region']})"):
+                        with st.expander(f"🔍 Revisar: {row['NombreComun']} ({row['Comuna']})"):
                             with st.form(f"form_revision_{idx}"):
-                                rev_especie = st.text_input("Confirmar / Corregir Especie:", value=row['NombreComun'], key=f"rev_esp_{idx}")
-                                rev_comuna = st.text_input("Confirmar / Corregir Comuna:", value=row['Comuna'], key=f"rev_com_{idx}")
-                                rev_notas = st.text_area("Notas de campo:", value=row['Notas'], key=f"rev_not_{idx}")
-                                
+                                rev_especie = st.text_input("Especie:", value=row['NombreComun'], key=f"rev_esp_{idx}")
+                                rev_comuna = st.text_input("Comuna:", value=row['Comuna'], key=f"rev_com_{idx}")
                                 c_btn1, c_btn2 = st.columns(2)
                                 with c_btn1:
-                                    btn_publicar = st.form_submit_button("🚀 Validar y Publicar Oficialmente", type="primary", use_container_width=True)
+                                    btn_publicar = st.form_submit_button("🚀 Publicar Oficialmente", type="primary", use_container_width=True)
                                 with c_btn2:
-                                    btn_descartar = st.form_submit_button("🗑️ Descartar Registro", use_container_width=True)
+                                    btn_descartar = st.form_submit_button("🗑️ Descartar", use_container_width=True)
                                 
                                 if btn_publicar:
                                     comuna_limpia = rev_comuna.strip().title()
                                     lat_f = COORDENADAS_COMUNAS.get(comuna_limpia, (row['Latitud'], row['Longitud']))[0]
                                     lon_f = COORDENADAS_COMUNAS.get(comuna_limpia, (row['Latitud'], row['Longitud']))[1]
-
                                     reg_oficial = pd.DataFrame([{
-                                        'Region': row['Region'],
-                                        'Comuna': comuna_limpia,
-                                        'NombreComun': rev_especie.strip().title(),
-                                        'TipoEvento': 'Aporte Comunitario',
-                                        'Latitud': lat_f,
-                                        'Longitud': lon_f,
-                                        'AportadoPor': usr_actual
+                                        'Region': row['Region'], 'Comuna': comuna_limpia,
+                                        'NombreComun': rev_especie.strip().title(), 'TipoEvento': 'Aporte Comunitario',
+                                        'Latitud': lat_f, 'Longitud': lon_f, 'AportadoPor': usr_actual
                                     }])
                                     st.session_state.df_nuevos_registros = pd.concat([st.session_state.df_nuevos_registros, reg_oficial], ignore_index=True)
                                     st.session_state.df_pendientes_revision.loc[idx, 'Estado'] = 'Publicado'
                                     st.session_state.conteo_avistamientos[usr_actual] = st.session_state.conteo_avistamientos.get(usr_actual, 0) + 1
-                                    
-                                    st.balloons()
-                                    st.success("¡Registro validado y publicado con éxito en el mapa!")
+                                    st.success("¡Registro validado y publicado!")
                                     st.rerun()
-
                                 if btn_descartar:
                                     st.session_state.df_pendientes_revision.loc[idx, 'Estado'] = 'Descartado'
-                                    st.warning("El registro ha sido descartado.")
+                                    st.warning("Registro descartado.")
                                     st.rerun()
                 else:
-                    st.info("No tienes avistamientos pendientes de revisión en este momento.")
-
-                st.markdown("---")
-                st.markdown("### 📋 Tus Avistamientos Publicados Oficialmente")
-                if not st.session_state.df_nuevos_registros.empty and 'AportadoPor' in st.session_state.df_nuevos_registros.columns:
-                    mis_aportes = st.session_state.df_nuevos_registros[st.session_state.df_nuevos_registros['AportadoPor'] == usr_actual]
-                    if not mis_aportes.empty:
-                        st.dataframe(mis_aportes[['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud']], use_container_width=True)
-                    else:
-                        st.info("Aún no tienes aportes comunitarios publicados.")
-                else:
-                    st.info("Aún no tienes aportes comunitarios publicados.")
+                    st.info("No tienes avistamientos pendientes de revisión.")
 
     except Exception as e:
         st.error(f"Error en la aplicación: {e}")
 
-# --- ENRUTADOR PRINCIPAL ---
+# --- ENRUTADOR ---
 if st.session_state.autenticado:
     mostrar_aplicacion_principal()
 else:
