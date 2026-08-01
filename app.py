@@ -435,6 +435,14 @@ def obtener_datos_gbif(nombre_especie):
         pass
     return taxonomia, imagen_url
 
+# Filtrar coordenadas válidas para excluir puntos fuera de Chile o nulos del mar
+    df['Valido_Mapa'] = (
+        df['Latitud'].between(-56.5, -17.5) & 
+        df['Longitud'].between(-76.0, -66.0)
+    )
+    
+    return df
+
 def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
     m = folium.Map(location=[lat_centro, lon_centro], zoom_start=zoom, tiles="CartoDB dark_matter")
     folium.TileLayer('OpenStreetMap', name='OpenStreetMap').add_to(m)
