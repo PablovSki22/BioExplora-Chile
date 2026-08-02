@@ -108,7 +108,8 @@ authenticator = Authenticate(
     cookie_name=st.secrets["auth"]["cookie_name"]
 )
 
-authenticator.check_authorization()
+# Método correcto de la librería para mostrar el flujo de autenticación
+authenticator.login()
 
 # --- INICIALIZACIÓN DE ESTADOS DE SESIÓN ---
 if "bd_usuarios" not in st.session_state:
