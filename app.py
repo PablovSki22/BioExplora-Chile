@@ -100,14 +100,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN DEL AUTENTICADOR DE GOOGLE ---
-authenticator = Authenticate(
-    secret_credentials_path=None,
-    cookie_name="bioexplora_cookie",
-    key=st.secrets.get("auth", {}).get("cookie_secret"),
-    cookie_expiry_days=30,
-    client_id=None, # O remueve esta línea si la librería no la acepta aquí
-)
+# --- INICIALIZACIÓN DEL AUTENTICADOR DE GOOGLE (CORREGIDO) ---
+authenticator = Authenticate()
 
 authenticator.check_authorization()
 
