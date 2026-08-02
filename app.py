@@ -110,7 +110,6 @@ authenticator = Authenticate(
     session_expiry_days=30,
 )
 
-# Verificar la autorización de Google en cada carga o redirección
 authenticator.check_authorization()
 
 # --- INICIALIZACIÓN DE ESTADOS DE SESIÓN ---
@@ -143,7 +142,6 @@ if "df_pendientes_revision" not in st.session_state:
 if "df_nuevos_registros" not in st.session_state:
     st.session_state.df_nuevos_registros = pd.DataFrame(columns=['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud', 'AportadoPor'])
 
-# Si el usuario se logueó exitosamente por Google, sincronizamos las variables de sesión
 if st.session_state.get("connected", False):
     google_email = st.session_state.get("user_email", "Usuario Google")
     st.session_state.autenticado = True
@@ -211,7 +209,6 @@ def obtener_coordenadas_exif(image_file):
     except Exception:
         return None, None
 
-# --- DICCIONARIOS DE MAPPING ---
 COORDENADAS_COMUNAS = {
     "Arica": (-18.4783, -70.3126), "Iquique": (-20.2133, -70.1503), "Antofagasta": (-23.6509, -70.3975),
     "Calama": (-22.4544, -68.9294), "Copiapó": (-27.3668, -70.3323), "Vallenar": (-28.5751, -70.7581),
@@ -424,7 +421,6 @@ def crear_mapa_contraste_especie(df_completo, df_especie):
     folium.LayerControl(position='topright').add_to(m)
     return m
 
-# --- PANTALLA DE AUTENTICACIÓN ---
 def mostrar_pantalla_login():
     st.markdown("<h1 style='text-align: center;'>🌿 BioExplora Chile</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center;'>Portal de Monitoreo de Biodiversidad Silvestre</p>", unsafe_allow_html=True)
@@ -450,7 +446,6 @@ def mostrar_pantalla_login():
                     st.error("Credenciales incorrectas. Verifique correo y contraseña.")
 
             st.markdown("---")
-            # Botón oficial de la librería streamlit-google-auth
             authenticator.login()
 
         with tab_registro:
@@ -485,7 +480,6 @@ def mostrar_pantalla_login():
                 st.session_state.tipo_acceso = "Invitado"
                 st.rerun()
 
-# --- APLICACIÓN PRINCIPAL ---
 def mostrar_aplicacion_principal():
     usr_actual = st.session_state.usuario_actual
     perfil_actual = st.session_state.perfiles_usuarios.get(usr_actual, {
@@ -517,7 +511,6 @@ def mostrar_aplicacion_principal():
 
         st.markdown("---")
         if st.button("🚪 Cerrar Sesión", use_container_width=True):
-            # Si se logueó por Google, usamos el logout de la librería
             if st.session_state.get("connected", False):
                 try:
                     authenticator.logout()
@@ -793,7 +786,7 @@ def mostrar_aplicacion_principal():
                     st.info("No tienes avistamientos pendientes de revisión.")
 
     except Exception as e:
-    st.error(f"Error en la aplicación: {e}")
+        st.error(f"Error en la aplicación: {e}")
 
 # --- ENRUTADOR PRINCIPAL ---
 if st.session_state.autenticado:
