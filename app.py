@@ -128,27 +128,48 @@ if "df_pendientes_revision" not in st.session_state:
 if "df_nuevos_registros" not in st.session_state:
     st.session_state.df_nuevos_registros = pd.DataFrame(columns=['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud', 'AportadoPor'])
 
-if st.session_state.get("connected", False):
-    google_email = st.session_state.get("user_email", "Usuario Google")
-    st.session_state.autenticado = True
-    st.session_state.usuario_actual = google_email
-    st.session_state.tipo_acceso = "Registrado"
-    if google_email not in st.session_state.conteo_avistamientos:
-        st.session_state.conteo_avistamientos[google_email] = 0
-    if google_email not in st.session_state.perfiles_usuarios:
-        st.session_state.perfiles_usuarios[google_email] = {
-            "nombre": google_email.split("@")[0].title(),
-            "bio": "Entusiasta de la biodiversidad chilena.",
-            "edad": "",
-            "genero": "Prefiero no decirlo",
-            "instagram": "",
-            "facebook": "",
-            "avatar": None
-        }
-elif "autenticado" not in st.session_state:
+if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
+
+if "usuario_actual" not in st.session_state:
     st.session_state.usuario_actual = None
+
+if "tipo_acceso" not in st.session_state:
     st.session_state.tipo_acceso = None
+
+if "acceso_google" not in st.session_state:
+    st.session_state.acceso_google = False
+
+# Procesar una sesión iniciada mediante Google OIDC.
+if st.user.is_logged_in:
+    google_email = getattr(st.user, "email", None)
+
+    if google_email:
+        google_nombre = getattr(
+            st.user,
+            "name",
+            google_email.split("@")[0].title()
+        )
+        google_avatar = getattr(st.user, "picture", None)
+
+        st.session_state.autenticado = True
+        st.session_state.usuario_actual = google_email
+        st.session_state.tipo_acceso = "Registrado"
+        st.session_state.acceso_google = True
+
+        if google_email not in st.session_state.conteo_avistamientos:
+            st.session_state.conteo_avistamientos[google_email] = 0
+
+        if google_email not in st.session_state.perfiles_usuarios:
+            st.session_state.perfiles_usuarios[google_email] = {
+                "nombre": google_nombre,
+                "bio": "Entusiasta de la biodiversidad chilena.",
+                "edad": "",
+                "genero": "Prefiero no decirlo",
+                "instagram": "",
+                "facebook": "",
+                "avatar": google_avatar
+            }
 
 def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -427,12 +448,19 @@ def mostrar_pantalla_login():
                     st.session_state.autenticado = True
                     st.session_state.usuario_actual = email_login
                     st.session_state.tipo_acceso = "Registrado"
+                    st.session_state.acceso_google = False
                     st.rerun()
                 else:
                     st.error("Credenciales incorrectas. Verifique correo y contraseña.")
 
             st.markdown("---")
-            authenticator.login()
+            st.markdown("#### Acceso con Google")
+            if st.button(
+                "🔐 Ingresar con Google",
+                use_container_width=True,
+                key="btn_login_google"
+            ):
+                st.login()
 
         with tab_registro:
             st.subheader("Crear una nueva cuenta")
@@ -464,6 +492,7 @@ def mostrar_pantalla_login():
                 st.session_state.autenticado = True
                 st.session_state.usuario_actual = "Invitado"
                 st.session_state.tipo_acceso = "Invitado"
+                st.session_state.acceso_google = False
                 st.rerun()
 
 def mostrar_aplicacion_principal():
@@ -496,16 +525,25 @@ def mostrar_aplicacion_principal():
             st.info("💡 Regístrate para personalizar tu perfil, sumar puntos y desbloquear rangos.")
 
         st.markdown("---")
-        if st.button("🚪 Cerrar Sesión", use_container_width=True):
-            if st.session_state.get("connected", False):
-                try:
-                    authenticator.logout()
-                except Exception:
-                    pass
+        if st.button(
+            "🚪 Cerrar Sesión",
+            use_container_width=True,
+            key="btn_cerrar_sesion"
+        ):
+            sesion_google = (
+                st.session_state.get("acceso_google", False)
+                or st.user.is_logged_in
+            )
+
             st.session_state.autenticado = False
             st.session_state.usuario_actual = None
             st.session_state.tipo_acceso = None
-            st.rerun()
+            st.session_state.acceso_google = False
+
+            if sesion_google and st.user.is_logged_in:
+                st.logout()
+            else:
+                st.rerun()
 
     st.title("🌿 BioExplora Chile: Portal de Biodiversidad")
 
@@ -775,7 +813,11 @@ def mostrar_aplicacion_principal():
         st.error(f"Error en la aplicación: {e}")
 
 # --- ENRUTADOR PRINCIPAL ---
-if st.session_state.autenticado:
+if st.user.is_logged_in:
+    st.session_state.autenticado = True
+    st.session_state.acceso_google = True
+
+if st.session_state.get("autenticado", False):
     mostrar_aplicacion_principal()
 else:
     mostrar_pantalla_login()
