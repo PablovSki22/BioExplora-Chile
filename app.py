@@ -7,7 +7,6 @@ import requests
 import hashlib
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
-from streamlit_google_auth import Authenticate
 import gc
 
 gc.collect()
