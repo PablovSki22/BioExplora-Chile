@@ -103,7 +103,7 @@ st.markdown("""
 # --- INICIALIZACIÓN DEL AUTENTICADOR DE GOOGLE ---
 authenticator = Authenticate(
     secret_credentials_path=None,
-    client_id=st.secrets["auth.google"]["client_id"],
+    client_id = st.secrets.get("auth", {}).get("google", {}).get("client_id")
     client_secret=st.secrets["auth.google"]["client_secret"],
     redirect_uri=st.secrets["auth"]["redirect_uri"],
     cookie_secret=st.secrets["auth"]["cookie_secret"],
