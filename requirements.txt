@@ -7,3 +7,4 @@ streamlit-folium
 requests
 pyarrow
 Pillow
+httpx
