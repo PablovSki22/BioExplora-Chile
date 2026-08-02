@@ -7,7 +7,9 @@ import requests
 import hashlib
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
+from streamlit_google_auth import Authenticate
 import gc
+
 gc.collect()
 
 st.set_page_config(
@@ -98,24 +100,18 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- VERIFICACIÓN Y CONTROL DE SESIÓN ---
-is_logged_in_google = False
-google_email = None
-user_obj = None
+# --- INICIALIZACIÓN DEL AUTENTICADOR DE GOOGLE ---
+authenticator = Authenticate(
+    secret_credentials_path=None,
+    client_id=st.secrets["auth.google"]["client_id"],
+    client_secret=st.secrets["auth.google"]["client_secret"],
+    redirect_uri=st.secrets["auth"]["redirect_uri"],
+    cookie_secret=st.secrets["auth"]["cookie_secret"],
+    session_expiry_days=30,
+)
 
-try:
-    from streamlit_google_auth import Authenticate
-    user_obj = getattr(st, "user", getattr(st, "experimental_user", None))
-except ImportError:
-    user_obj = getattr(st, "user", getattr(st, "experimental_user", None))
-
-if user_obj:
-    if getattr(user_obj, "is_logged_in", False):
-        is_logged_in_google = True
-        google_email = getattr(user_obj, "email", "Usuario Google")
-    elif getattr(user_obj, "email", None):
-        is_logged_in_google = True
-        google_email = user_obj.email
+# Verificar la autorización de Google en cada carga o redirección
+authenticator.check_authorization()
 
 # --- INICIALIZACIÓN DE ESTADOS DE SESIÓN ---
 if "bd_usuarios" not in st.session_state:
@@ -147,7 +143,9 @@ if "df_pendientes_revision" not in st.session_state:
 if "df_nuevos_registros" not in st.session_state:
     st.session_state.df_nuevos_registros = pd.DataFrame(columns=['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud', 'AportadoPor'])
 
-if is_logged_in_google:
+# Si el usuario se logueó exitosamente por Google, sincronizamos las variables de sesión
+if st.session_state.get("connected", False):
+    google_email = st.session_state.get("user_email", "Usuario Google")
     st.session_state.autenticado = True
     st.session_state.usuario_actual = google_email
     st.session_state.tipo_acceso = "Registrado"
@@ -315,7 +313,6 @@ def load_base_data():
     df['Latitud'] = df.apply(obtener_lat, axis=1)
     df['Longitud'] = df.apply(obtener_lon, axis=1)
     
-    # Rellenar cualquier NaN remanente para evitar errores en componentes
     df['Latitud'] = df['Latitud'].fillna(-33.4489)
     df['Longitud'] = df['Longitud'].fillna(-70.6693)
 
@@ -453,11 +450,8 @@ def mostrar_pantalla_login():
                     st.error("Credenciales incorrectas. Verifique correo y contraseña.")
 
             st.markdown("---")
-            if st.button("🌐 Continuar con Google", use_container_width=True):
-                try:
-                    st.login("google")
-                except Exception as err:
-                    st.error(f"⚠️ Error al redireccionar a Google: {err}")
+            # Botón oficial de la librería streamlit-google-auth
+            authenticator.login()
 
         with tab_registro:
             st.subheader("Crear una nueva cuenta")
@@ -523,14 +517,15 @@ def mostrar_aplicacion_principal():
 
         st.markdown("---")
         if st.button("🚪 Cerrar Sesión", use_container_width=True):
+            # Si se logueó por Google, usamos el logout de la librería
+            if st.session_state.get("connected", False):
+                try:
+                    authenticator.logout()
+                except Exception:
+                    pass
             st.session_state.autenticado = False
             st.session_state.usuario_actual = None
             st.session_state.tipo_acceso = None
-            if hasattr(st, "logout"):
-                try:
-                    st.logout()
-                except Exception:
-                    pass
             st.rerun()
 
     st.title("🌿 BioExplora Chile: Portal de Biodiversidad")
@@ -538,7 +533,6 @@ def mostrar_aplicacion_principal():
     try:
         df = get_complete_data()
         
-        # Generar pestañas de forma robusta según tipo de usuario
         if st.session_state.tipo_acceso == "Registrado":
             tab1, tab2, tab3, tab4, tab_perfil = st.tabs([
                 "📌 Mapa Geográfico", 
@@ -799,9 +793,9 @@ def mostrar_aplicacion_principal():
                     st.info("No tienes avistamientos pendientes de revisión.")
 
     except Exception as e:
-        st.error(f"Error en la aplicación: {e}")
+    st.error(f"Error en la aplicación: {e}")
 
-# --- ENRUTADOR ---
+# --- ENRUTADOR PRINCIPAL ---
 if st.session_state.autenticado:
     mostrar_aplicacion_principal()
 else:
