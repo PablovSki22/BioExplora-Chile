@@ -103,11 +103,10 @@ st.markdown("""
 # --- INICIALIZACIÓN DEL AUTENTICADOR DE GOOGLE ---
 authenticator = Authenticate(
     secret_credentials_path=None,
-    client_id=st.secrets.get("auth", {}).get("google", {}).get("client_id"),
-    client_secret=st.secrets.get("auth", {}).get("google", {}).get("client_secret"),
-    redirect_uri=st.secrets.get("auth", {}).get("redirect_uri"),
-    cookie_secret=st.secrets.get("auth", {}).get("cookie_secret"),
-    session_expiry_days=30,
+    cookie_name="bioexplora_cookie",
+    key=st.secrets.get("auth", {}).get("cookie_secret"),
+    cookie_expiry_days=30,
+    client_id=None, # O remueve esta línea si la librería no la acepta aquí
 )
 
 authenticator.check_authorization()
