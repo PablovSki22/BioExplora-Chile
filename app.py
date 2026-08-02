@@ -99,17 +99,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN DEL AUTENTICADOR DE GOOGLE ---
-authenticator = Authenticate(
-    secret_credentials_path=st.secrets["auth"]["secret_credentials_path"],
-    redirect_uri=st.secrets["auth"]["redirect_uri"],
-    cookie_key=st.secrets["auth"]["cookie_key"],
-    cookie_name=st.secrets["auth"]["cookie_name"]
-)
-
-# Método correcto de la librería para mostrar el flujo de autenticación
-authenticator.login()
-
 # --- INICIALIZACIÓN DE ESTADOS DE SESIÓN ---
 if "bd_usuarios" not in st.session_state:
     st.session_state.bd_usuarios = {
@@ -128,7 +117,6 @@ if "perfiles_usuarios" not in st.session_state:
             "avatar": None
         }
     }
-
 if "conteo_avistamientos" not in st.session_state:
     st.session_state.conteo_avistamientos = {
         "admin@bioexplora.cl": 12
