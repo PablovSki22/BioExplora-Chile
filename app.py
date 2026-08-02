@@ -100,8 +100,16 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN DEL AUTENTICADOR DE GOOGLE (CORREGIDO) ---
-authenticator = Authenticate()
+# --- INICIALIZACIÓN DEL AUTENTICADOR DE GOOGLE ---
+authenticator = Authenticate(
+    secret_credentials_path=st.secrets["auth"]["secret_credentials_path"],
+    redirect_uri=st.secrets["auth"]["redirect_uri"],
+    cookie_key=st.secrets["auth"]["cookie_key"],
+    cookie_name=st.secrets["auth"]["cookie_name"],
+    client_id=st.secrets["auth"]["client_id"],
+    client_secret=st.secrets["auth"]["client_secret"],
+    server_metadata_url=st.secrets["auth"]["server_metadata_url"],
+)
 
 authenticator.check_authorization()
 
