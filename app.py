@@ -475,6 +475,152 @@ def crear_mapa_contraste_especie(df_completo, df_especie):
     folium.LayerControl(position='topright').add_to(m)
     return m
 
+VERSION_CONSENTIMIENTO = "BIOEXPLORA-CONSENTIMIENTO-2026-01"
+
+
+def usuario_tiene_consentimiento_vigente(usuario_email):
+    """Comprueba si la cuenta aceptó las cuatro autorizaciones vigentes."""
+    if not usuario_email or usuario_email == "Invitado":
+        return False
+
+    try:
+        respuesta = (
+            supabase
+            .table("consentimientos_usuarios")
+            .select("id")
+            .eq("usuario_email", usuario_email)
+            .eq("confirma_autoria", True)
+            .eq("autoriza_almacenamiento", True)
+            .eq("autoriza_publicacion", True)
+            .eq("autoriza_uso_institucional", True)
+            .eq("version_consentimiento", VERSION_CONSENTIMIENTO)
+            .eq("vigente", True)
+            .limit(1)
+            .execute()
+        )
+        return bool(respuesta.data)
+    except Exception as error:
+        st.error(
+            "No fue posible verificar las autorizaciones de la cuenta: "
+            f"{error}"
+        )
+        return False
+
+
+def guardar_consentimiento_usuario(usuario_email):
+    """Crea o actualiza la aceptación general de aportes de una cuenta."""
+    registro = {
+        "usuario_email": usuario_email,
+        "confirma_autoria": True,
+        "autoriza_almacenamiento": True,
+        "autoriza_publicacion": True,
+        "autoriza_uso_institucional": True,
+        "version_consentimiento": VERSION_CONSENTIMIENTO,
+        "vigente": True,
+        "fecha_retiro": None
+    }
+
+    return (
+        supabase
+        .table("consentimientos_usuarios")
+        .upsert(registro, on_conflict="usuario_email")
+        .execute()
+    )
+
+
+def mostrar_autorizacion_aportes(usuario_email):
+    """Muestra la aceptación única que habilita el menú de aportes."""
+    st.subheader("🔐 Autorización para realizar aportes comunitarios")
+    st.info(
+        "Puedes seguir usando mapas, estadísticas y el buscador sin aceptar. "
+        "Para enviar avistamientos debes aceptar una sola vez las cuatro "
+        "autorizaciones asociadas a tu cuenta."
+    )
+
+    with st.expander("📄 Leer condiciones del aporte comunitario", expanded=True):
+        st.markdown(
+            """
+Los aportes enviados mediante BioExplora Chile serán identificados como
+**registros comunitarios** y no adquirirán carácter oficial por el solo
+hecho de ser revisados, aprobados o publicados.
+
+Las fotografías podrán ser validadas, corregidas de orientación,
+redimensionadas hasta un máximo de **1600 × 1600 píxeles**, convertidas a
+un formato admitido, comprimidas y limpiadas de metadatos antes de su
+almacenamiento.
+
+BioExplora Chile podrá generalizar la ubicación mostrada públicamente para
+proteger la privacidad de las personas y la conservación de especies
+sensibles. La ubicación precisa podrá conservarse con acceso restringido
+para análisis institucionales autorizados.
+
+Esta aceptación se aplicará a los aportes futuros realizados con esta
+cuenta mientras permanezca vigente esta versión de las condiciones.
+            """
+        )
+
+    with st.form("form_consentimiento_aportes"):
+        confirma_autoria = st.checkbox(
+            "Confirmo que soy autor de las fotografías que compartiré o "
+            "que cuento con autorización suficiente para aportarlas."
+        )
+        autoriza_almacenamiento = st.checkbox(
+            "Autorizo a BioExplora Chile a procesar, almacenar y revisar "
+            "las fotografías y los datos asociados a mis avistamientos."
+        )
+        autoriza_publicacion = st.checkbox(
+            "Autorizo que los aportes aprobados sean publicados como "
+            "registros comunitarios, diferenciados de los oficiales."
+        )
+        autoriza_uso_institucional = st.checkbox(
+            "Autorizo que los antecedentes técnicos, incluida la ubicación "
+            "precisa cuando sea necesaria, sean compartidos de forma "
+            "restringida con organismos públicos e instituciones "
+            "colaboradoras autorizadas para fines de conservación, "
+            "investigación, fiscalización, planificación o gestión ambiental."
+        )
+
+        aceptar = st.form_submit_button(
+            "✅ Aceptar autorizaciones y habilitar aportes",
+            type="primary",
+            use_container_width=True
+        )
+
+        if aceptar:
+            autorizaciones = [
+                confirma_autoria,
+                autoriza_almacenamiento,
+                autoriza_publicacion,
+                autoriza_uso_institucional
+            ]
+
+            if not all(autorizaciones):
+                st.error(
+                    "Para habilitar los aportes debes aceptar las cuatro "
+                    "autorizaciones."
+                )
+            else:
+                try:
+                    respuesta = guardar_consentimiento_usuario(usuario_email)
+                    if respuesta.data:
+                        st.session_state.consentimiento_aportes = True
+                        st.success(
+                            "Autorizaciones guardadas. El formulario de "
+                            "avistamientos ya está habilitado."
+                        )
+                        st.rerun()
+                    else:
+                        st.error(
+                            "Supabase no confirmó el registro de las "
+                            "autorizaciones."
+                        )
+                except Exception as error:
+                    st.error(
+                        "No fue posible guardar las autorizaciones: "
+                        f"{error}"
+                    )
+
+
 def mostrar_pantalla_login():
     st.markdown("<h1 style='text-align: center;'>🌿 BioExplora Chile</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center;'>Portal de Monitoreo de Biodiversidad Silvestre</p>", unsafe_allow_html=True)
@@ -496,6 +642,7 @@ def mostrar_pantalla_login():
                     st.session_state.usuario_actual = email_login
                     st.session_state.tipo_acceso = "Registrado"
                     st.session_state.acceso_google = False
+                    st.session_state.pop("consentimiento_aportes", None)
                     st.rerun()
                 else:
                     st.error("Credenciales incorrectas. Verifique correo y contraseña.")
@@ -540,6 +687,7 @@ def mostrar_pantalla_login():
                 st.session_state.usuario_actual = "Invitado"
                 st.session_state.tipo_acceso = "Invitado"
                 st.session_state.acceso_google = False
+                st.session_state.pop("consentimiento_aportes", None)
                 st.rerun()
 
 def mostrar_aplicacion_principal():
@@ -586,6 +734,7 @@ def mostrar_aplicacion_principal():
             st.session_state.usuario_actual = None
             st.session_state.tipo_acceso = None
             st.session_state.acceso_google = False
+            st.session_state.pop("consentimiento_aportes", None)
 
             if sesion_google and st.user.is_logged_in:
                 st.logout()
@@ -734,92 +883,150 @@ def mostrar_aplicacion_principal():
 
         with tab4:
             st.subheader("📝 Registrar un Nuevo Avistamiento de Biodiversidad")
+
             if st.session_state.tipo_acceso == "Invitado":
-                st.warning("🔒 Los invitados están en modo sólo lectura. Inicia sesión con una cuenta para reportar avistamientos.")
+                st.warning(
+                    "🔒 Los invitados están en modo sólo lectura. "
+                    "Inicia sesión con una cuenta para reportar avistamientos."
+                )
             else:
-                st.markdown("Sube una foto del avistamiento (**con GPS activado en tu cámara**) o indica la comuna.")
-                with st.form("form_avistamiento"):
-                    col_f1, col_f2 = st.columns(2)
-                    with col_f1:
-                        input_especie = st.text_input("Especie observada:", placeholder="Ej: Pudú, Cóndor")
-                        lista_regiones = sorted(list(COORDENADAS_REGIONES.keys()))
-                        input_region = st.selectbox("Región:", lista_regiones)
-                        input_comuna = st.text_input("Comuna:", placeholder="Ej: San Pablo")
-                    with col_f2:
-                        foto_avistamiento = st.file_uploader("📷 Subir Fotografía (Extrae GPS automático)", type=["jpg", "jpeg", "png"])
-                        input_notas = st.text_area("Notas / Observaciones de campo:")
-                    
-                    btn_guardar = st.form_submit_button("📥 Enviar a Revisión", type="primary", use_container_width=True)
-                    if btn_guardar:
-                        if not input_especie.strip() or not input_comuna.strip():
-                            st.error(
-                                "Por favor completa al menos la especie "
-                                "y la comuna."
+                if "consentimiento_aportes" not in st.session_state:
+                    st.session_state.consentimiento_aportes = (
+                        usuario_tiene_consentimiento_vigente(usr_actual)
+                    )
+
+                if not st.session_state.consentimiento_aportes:
+                    mostrar_autorizacion_aportes(usr_actual)
+                else:
+                    st.success(
+                        "✅ Tu cuenta tiene las autorizaciones vigentes para "
+                        "realizar aportes comunitarios."
+                    )
+                    st.markdown(
+                        "Sube una foto del avistamiento "
+                        "(**con GPS activado en tu cámara**) o indica la comuna."
+                    )
+
+                    with st.form("form_avistamiento"):
+                        col_f1, col_f2 = st.columns(2)
+
+                        with col_f1:
+                            input_especie = st.text_input(
+                                "Especie observada:",
+                                placeholder="Ej: Pudú, Cóndor"
                             )
-                        else:
-                            lat_exif, lon_exif = None, None
+                            lista_regiones = sorted(
+                                list(COORDENADAS_REGIONES.keys())
+                            )
+                            input_region = st.selectbox(
+                                "Región:",
+                                lista_regiones
+                            )
+                            input_comuna = st.text_input(
+                                "Comuna:",
+                                placeholder="Ej: San Pablo"
+                            )
 
-                            if foto_avistamiento is not None:
-                                lat_exif, lon_exif = obtener_coordenadas_exif(
-                                    foto_avistamiento
-                                )
+                        with col_f2:
+                            foto_avistamiento = st.file_uploader(
+                                "📷 Subir Fotografía "
+                                "(Extrae GPS automático)",
+                                type=["jpg", "jpeg", "png"]
+                            )
+                            input_notas = st.text_area(
+                                "Notas / Observaciones de campo:"
+                            )
 
-                            if lat_exif is not None and lon_exif is not None:
-                                lat_final = lat_exif
-                                lon_final = lon_exif
-                            else:
-                                coordenadas_finales = COORDENADAS_COMUNAS.get(
-                                    input_comuna.strip().title(),
-                                    COORDENADAS_REGIONES.get(
-                                        input_region,
-                                        (-33.4489, -70.6693)
-                                    )
-                                )
-                                lat_final = coordenadas_finales[0]
-                                lon_final = coordenadas_finales[1]
+                        btn_guardar = st.form_submit_button(
+                            "📥 Enviar a Revisión",
+                            type="primary",
+                            use_container_width=True
+                        )
 
-                            registro_supabase = {
-                                "region": input_region,
-                                "comuna": input_comuna.strip().title(),
-                                "nombre_comun": input_especie.strip().title(),
-                                "nombre_cientifico": (
-                                    obtener_nombre_cientifico_resuelto(
-                                        input_especie.strip()
-                                    )
-                                ),
-                                "tipo_evento": "Aporte Comunitario",
-                                "latitud": float(lat_final),
-                                "longitud": float(lon_final),
-                                "aportado_por": usr_actual,
-                                "notas": input_notas.strip(),
-                                "estado": "Pendiente de Revisión",
-                                "foto_url": None
-                            }
-
-                            try:
-                                respuesta_supabase = (
-                                    supabase
-                                    .table("avistamientos")
-                                    .insert(registro_supabase)
-                                    .execute()
-                                )
-
-                                if respuesta_supabase.data:
-                                    st.success(
-                                        "📝 ¡Avistamiento guardado "
-                                        "permanentemente y enviado a revisión!"
-                                    )
-                                else:
-                                    st.warning(
-                                        "Supabase recibió la solicitud, pero no "
-                                        "devolvió el registro creado."
-                                    )
-
-                            except Exception as error:
+                        if btn_guardar:
+                            if (
+                                not input_especie.strip()
+                                or not input_comuna.strip()
+                            ):
                                 st.error(
-                                    "No fue posible guardar el "
-                                    f"avistamiento: {error}"
+                                    "Por favor completa al menos la especie "
+                                    "y la comuna."
                                 )
+                            else:
+                                lat_exif, lon_exif = None, None
+
+                                if foto_avistamiento is not None:
+                                    lat_exif, lon_exif = (
+                                        obtener_coordenadas_exif(
+                                            foto_avistamiento
+                                        )
+                                    )
+
+                                if (
+                                    lat_exif is not None
+                                    and lon_exif is not None
+                                ):
+                                    lat_final = lat_exif
+                                    lon_final = lon_exif
+                                else:
+                                    coordenadas_finales = (
+                                        COORDENADAS_COMUNAS.get(
+                                            input_comuna.strip().title(),
+                                            COORDENADAS_REGIONES.get(
+                                                input_region,
+                                                (-33.4489, -70.6693)
+                                            )
+                                        )
+                                    )
+                                    lat_final = coordenadas_finales[0]
+                                    lon_final = coordenadas_finales[1]
+
+                                registro_supabase = {
+                                    "region": input_region,
+                                    "comuna": input_comuna.strip().title(),
+                                    "nombre_comun": (
+                                        input_especie.strip().title()
+                                    ),
+                                    "nombre_cientifico": (
+                                        obtener_nombre_cientifico_resuelto(
+                                            input_especie.strip()
+                                        )
+                                    ),
+                                    "tipo_evento": "Aporte Comunitario",
+                                    "latitud": float(lat_final),
+                                    "longitud": float(lon_final),
+                                    "aportado_por": usr_actual,
+                                    "notas": input_notas.strip(),
+                                    "estado": "Pendiente de Revisión",
+                                    "foto_url": None
+                                }
+
+                                try:
+                                    respuesta_supabase = (
+                                        supabase
+                                        .table("avistamientos")
+                                        .insert(registro_supabase)
+                                        .execute()
+                                    )
+
+                                    if respuesta_supabase.data:
+                                        st.success(
+                                            "📝 ¡Avistamiento guardado "
+                                            "permanentemente y enviado "
+                                            "a revisión!"
+                                        )
+                                    else:
+                                        st.warning(
+                                            "Supabase recibió la solicitud, "
+                                            "pero no devolvió el registro "
+                                            "creado."
+                                        )
+
+                                except Exception as error:
+                                    st.error(
+                                        "No fue posible guardar el "
+                                        f"avistamiento: {error}"
+                                    )
 
         if tab_perfil and st.session_state.tipo_acceso == "Registrado":
             with tab_perfil:
