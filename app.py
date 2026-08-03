@@ -763,20 +763,39 @@ def mostrar_aplicacion_principal():
                                 lat_final = COORDENADAS_COMUNAS.get(input_comuna.strip().title(), COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[0]
                                 lon_final = COORDENADAS_COMUNAS.get(input_comuna.strip().title(), COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[1]
                             
-                            nuevo_pendiente = pd.DataFrame([{
-                                'Region': input_region,
-                                'Comuna': input_comuna.strip().title(),
-                                'NombreComun': input_especie.strip().title(),
-                                'TipoEvento': 'Aporte Comunitario',
-                                'Latitud': lat_final,
-                                'Longitud': lon_final,
-                                'AportadoPor': usr_actual,
-                                'Notas': input_notas,
-                                'Estado': 'Pendiente de Revisión'
-                            }])
-                            st.session_state.df_pendientes_revision = pd.concat([st.session_state.df_pendientes_revision, nuevo_pendiente], ignore_index=True)
-                            st.success("📝 ¡Avistamiento guardado en fase de revisión! Ve a tu sección **Mi Perfil** para validarlo.")
+                          registro_supabase = {
+    "region": input_region,
+    "comuna": input_comuna.strip().title(),
+    "nombre_comun": input_especie.strip().title(),
+    "nombre_cientifico": obtener_nombre_cientifico_resuelto(
+        input_especie.strip()
+    ),
+    "tipo_evento": "Aporte Comunitario",
+    "latitud": float(lat_final),
+    "longitud": float(lon_final),
+    "aportado_por": usr_actual,
+    "notas": input_notas.strip(),
+    "estado": "Pendiente de Revisión",
+    "foto_url": None
+}
 
+try:
+    respuesta_supabase = (
+        supabase
+        .table("avistamientos")
+        .insert(registro_supabase)
+        .execute()
+    )
+
+    st.success(
+        "📝 ¡Avistamiento guardado permanentemente "
+        "y enviado a revisión!"
+    )
+
+except Exception as error:
+    st.error(
+        f"No fue posible guardar el avistamiento: {error}"
+    )
         if tab_perfil and st.session_state.tipo_acceso == "Registrado":
             with tab_perfil:
                 st.subheader("⚙️ Configuración y Personalización del Perfil")
