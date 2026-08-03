@@ -145,6 +145,75 @@ st.markdown("""
         background-color: #0b132b;
         border-right: 1px solid #1c2541;
     }
+
+
+    /* --- CONTRASTE MEJORADO PARA SELECTORES Y OPCIONES --- */
+
+    /* Campo cerrado del selector */
+    div[data-baseweb="select"] > div {
+        background-color: #f8fafc !important;
+        border: 2px solid #60a5fa !important;
+        border-radius: 9px !important;
+        color: #0f172a !important;
+    }
+
+    /* Texto y flecha del selector cerrado */
+    div[data-baseweb="select"] span,
+    div[data-baseweb="select"] svg {
+        color: #0f172a !important;
+        fill: #0f172a !important;
+    }
+
+    /* Menú desplegable de BaseWeb */
+    div[data-baseweb="popover"],
+    ul[role="listbox"] {
+        background-color: #0f172a !important;
+        border: 1px solid #60a5fa !important;
+        border-radius: 10px !important;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45) !important;
+    }
+
+    /* Opciones normales */
+    li[role="option"] {
+        background-color: #0f172a !important;
+        color: #f8fafc !important;
+        font-weight: 600 !important;
+    }
+
+    li[role="option"] * {
+        color: #f8fafc !important;
+    }
+
+    /* Opción bajo el cursor */
+    li[role="option"]:hover,
+    li[role="option"][data-highlighted="true"] {
+        background-color: #1d4ed8 !important;
+        color: #ffffff !important;
+    }
+
+    /* Opción seleccionada */
+    li[role="option"][aria-selected="true"] {
+        background-color: #059669 !important;
+        color: #ffffff !important;
+    }
+
+    li[role="option"][aria-selected="true"] * {
+        color: #ffffff !important;
+    }
+
+    /* Radio buttons */
+    div[role="radiogroup"] label,
+    div[role="radiogroup"] label p,
+    div[role="radiogroup"] label span {
+        color: #f8fafc !important;
+        font-weight: 600 !important;
+    }
+
+    div[role="radiogroup"] input:focus + div {
+        outline: 2px solid #60a5fa !important;
+        outline-offset: 2px !important;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
