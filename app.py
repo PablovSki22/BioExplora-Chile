@@ -5,7 +5,9 @@ import folium
 from streamlit_folium import st_folium
 import requests
 import hashlib
-from PIL import Image
+import io
+import uuid
+from PIL import Image, ImageOps, UnidentifiedImageError
 from PIL.ExifTags import TAGS, GPSTAGS
 from supabase import create_client, Client
 import gc
@@ -475,6 +477,152 @@ def crear_mapa_contraste_especie(df_completo, df_especie):
     folium.LayerControl(position='topright').add_to(m)
     return m
 
+BUCKET_FOTOS = "fotos-avistamientos"
+MAX_DIMENSION_FOTO = 1600
+MIN_LADO_MAYOR_FOTO = 320
+CALIDAD_JPEG = 85
+FORMATOS_ENTRADA_PERMITIDOS = {"JPEG", "PNG", "WEBP"}
+MIME_POR_FORMATO = {
+    "JPEG": "image/jpeg",
+    "PNG": "image/png",
+    "WEBP": "image/webp"
+}
+
+
+def obtener_consentimiento_vigente(usuario_email):
+    """Devuelve el consentimiento vigente de la cuenta o None."""
+    if not usuario_email or usuario_email == "Invitado":
+        return None
+
+    respuesta = (
+        supabase
+        .table("consentimientos_usuarios")
+        .select("id, version_consentimiento")
+        .eq("usuario_email", usuario_email)
+        .eq("confirma_autoria", True)
+        .eq("autoriza_almacenamiento", True)
+        .eq("autoriza_publicacion", True)
+        .eq("autoriza_uso_institucional", True)
+        .eq("version_consentimiento", VERSION_CONSENTIMIENTO)
+        .eq("vigente", True)
+        .limit(1)
+        .execute()
+    )
+
+    return respuesta.data[0] if respuesta.data else None
+
+
+def procesar_fotografia(foto_archivo):
+    """Valida, orienta, redimensiona y convierte una imagen a JPEG sin EXIF."""
+    datos_originales = foto_archivo.getvalue()
+    bytes_originales = len(datos_originales)
+
+    if not datos_originales:
+        raise ValueError("La fotografía está vacía.")
+
+    if bytes_originales > 10 * 1024 * 1024:
+        raise ValueError("La fotografía supera el límite de 10 MB.")
+
+    try:
+        with Image.open(io.BytesIO(datos_originales)) as imagen_original:
+            formato_original = (imagen_original.format or "").upper()
+
+            if formato_original not in FORMATOS_ENTRADA_PERMITIDOS:
+                raise ValueError(
+                    "Formato no permitido. Usa una imagen JPEG, PNG o WebP."
+                )
+
+            ancho_original, alto_original = imagen_original.size
+            lado_mayor = max(ancho_original, alto_original)
+
+            if lado_mayor < MIN_LADO_MAYOR_FOTO:
+                raise ValueError(
+                    "La fotografía es demasiado pequeña. El lado mayor debe "
+                    f"tener al menos {MIN_LADO_MAYOR_FOTO} píxeles."
+                )
+
+            # Corrige la orientación antes de retirar los metadatos EXIF.
+            imagen = ImageOps.exif_transpose(imagen_original)
+
+            # JPEG no admite transparencia. Se compone sobre fondo blanco.
+            if imagen.mode in ("RGBA", "LA") or (
+                imagen.mode == "P" and "transparency" in imagen.info
+            ):
+                rgba = imagen.convert("RGBA")
+                fondo = Image.new("RGB", rgba.size, (255, 255, 255))
+                fondo.paste(rgba, mask=rgba.getchannel("A"))
+                imagen = fondo
+            else:
+                imagen = imagen.convert("RGB")
+
+            # Reduce proporcionalmente; nunca amplía imágenes pequeñas.
+            imagen.thumbnail(
+                (MAX_DIMENSION_FOTO, MAX_DIMENSION_FOTO),
+                Image.Resampling.LANCZOS
+            )
+            ancho_final, alto_final = imagen.size
+
+            salida = io.BytesIO()
+            # No se pasa exif, icc_profile ni xmp: la copia queda sanitizada.
+            imagen.save(
+                salida,
+                format="JPEG",
+                quality=CALIDAD_JPEG,
+                optimize=True,
+                progressive=True
+            )
+            datos_finales = salida.getvalue()
+
+    except UnidentifiedImageError as error:
+        raise ValueError(
+            "El archivo no es una imagen válida o está dañado."
+        ) from error
+
+    return {
+        "bytes": datos_finales,
+        "nombre_original": foto_archivo.name,
+        "mime_original": MIME_POR_FORMATO[formato_original],
+        "mime_final": "image/jpeg",
+        "ancho_original": ancho_original,
+        "alto_original": alto_original,
+        "ancho_final": ancho_final,
+        "alto_final": alto_final,
+        "bytes_original": bytes_originales,
+        "bytes_final": len(datos_finales),
+        "hash_sha256": hashlib.sha256(datos_finales).hexdigest()
+    }
+
+
+def crear_ruta_fotografia(usuario_email):
+    """Genera una ruta privada sin exponer el correo de la cuenta."""
+    usuario_hash = hashlib.sha256(
+        usuario_email.lower().encode("utf-8")
+    ).hexdigest()[:16]
+    return f"pendientes/{usuario_hash}/{uuid.uuid4().hex}.jpg"
+
+
+def subir_fotografia_privada(ruta, datos):
+    """Sube el JPEG sanitizado al bucket privado."""
+    return (
+        supabase.storage
+        .from_(BUCKET_FOTOS)
+        .upload(
+            path=ruta,
+            file=datos,
+            file_options={
+                "content-type": "image/jpeg",
+                "upsert": "false"
+            }
+        )
+    )
+
+
+def eliminar_fotografia_privada(ruta):
+    """Elimina una imagen si falla la creación del avistamiento."""
+    if ruta:
+        supabase.storage.from_(BUCKET_FOTOS).remove([ruta])
+
+
 VERSION_CONSENTIMIENTO = "BIOEXPLORA-CONSENTIMIENTO-2026-01"
 
 
@@ -903,8 +1051,10 @@ def mostrar_aplicacion_principal():
                         "realizar aportes comunitarios."
                     )
                     st.markdown(
-                        "Sube una foto del avistamiento "
-                        "(**con GPS activado en tu cámara**) o indica la comuna."
+                        "Puedes adjuntar una fotografía JPEG, PNG o WebP de "
+                        "hasta 10 MB. BioExplora la orientará, redimensionará "
+                        "hasta 1600 × 1600 píxeles, convertirá a JPEG y "
+                        "eliminará sus metadatos antes de almacenarla."
                     )
 
                     with st.form("form_avistamiento"):
@@ -929,9 +1079,12 @@ def mostrar_aplicacion_principal():
 
                         with col_f2:
                             foto_avistamiento = st.file_uploader(
-                                "📷 Subir Fotografía "
-                                "(Extrae GPS automático)",
-                                type=["jpg", "jpeg", "png"]
+                                "📷 Subir fotografía (opcional)",
+                                type=["jpg", "jpeg", "png", "webp"],
+                                help=(
+                                    "Máximo 10 MB. La copia almacenada se "
+                                    "guardará como JPEG, sin metadatos."
+                                )
                             )
                             input_notas = st.text_area(
                                 "Notas / Observaciones de campo:"
@@ -953,55 +1106,138 @@ def mostrar_aplicacion_principal():
                                     "y la comuna."
                                 )
                             else:
-                                lat_exif, lon_exif = None, None
-
-                                if foto_avistamiento is not None:
-                                    lat_exif, lon_exif = (
-                                        obtener_coordenadas_exif(
-                                            foto_avistamiento
-                                        )
-                                    )
-
-                                if (
-                                    lat_exif is not None
-                                    and lon_exif is not None
-                                ):
-                                    lat_final = lat_exif
-                                    lon_final = lon_exif
-                                else:
-                                    coordenadas_finales = (
-                                        COORDENADAS_COMUNAS.get(
-                                            input_comuna.strip().title(),
-                                            COORDENADAS_REGIONES.get(
-                                                input_region,
-                                                (-33.4489, -70.6693)
-                                            )
-                                        )
-                                    )
-                                    lat_final = coordenadas_finales[0]
-                                    lon_final = coordenadas_finales[1]
-
-                                registro_supabase = {
-                                    "region": input_region,
-                                    "comuna": input_comuna.strip().title(),
-                                    "nombre_comun": (
-                                        input_especie.strip().title()
-                                    ),
-                                    "nombre_cientifico": (
-                                        obtener_nombre_cientifico_resuelto(
-                                            input_especie.strip()
-                                        )
-                                    ),
-                                    "tipo_evento": "Aporte Comunitario",
-                                    "latitud": float(lat_final),
-                                    "longitud": float(lon_final),
-                                    "aportado_por": usr_actual,
-                                    "notas": input_notas.strip(),
-                                    "estado": "Pendiente de Revisión",
-                                    "foto_url": None
-                                }
+                                ruta_foto = None
+                                foto_procesada = None
 
                                 try:
+                                    consentimiento = (
+                                        obtener_consentimiento_vigente(
+                                            usr_actual
+                                        )
+                                    )
+                                    if not consentimiento:
+                                        st.session_state.consentimiento_aportes = False
+                                        raise ValueError(
+                                            "La autorización de aportes no está "
+                                            "vigente. Vuelve a aceptar las "
+                                            "condiciones."
+                                        )
+
+                                    lat_exif, lon_exif = None, None
+                                    if foto_avistamiento is not None:
+                                        # Extraer GPS de la copia temporal antes
+                                        # de sanitizar y subir la fotografía.
+                                        lat_exif, lon_exif = (
+                                            obtener_coordenadas_exif(
+                                                foto_avistamiento
+                                            )
+                                        )
+                                        foto_avistamiento.seek(0)
+                                        foto_procesada = procesar_fotografia(
+                                            foto_avistamiento
+                                        )
+
+                                    if (
+                                        lat_exif is not None
+                                        and lon_exif is not None
+                                    ):
+                                        lat_final = lat_exif
+                                        lon_final = lon_exif
+                                    else:
+                                        coordenadas_finales = (
+                                            COORDENADAS_COMUNAS.get(
+                                                input_comuna.strip().title(),
+                                                COORDENADAS_REGIONES.get(
+                                                    input_region,
+                                                    (-33.4489, -70.6693)
+                                                )
+                                            )
+                                        )
+                                        lat_final = coordenadas_finales[0]
+                                        lon_final = coordenadas_finales[1]
+
+                                    if foto_procesada is not None:
+                                        ruta_foto = crear_ruta_fotografia(
+                                            usr_actual
+                                        )
+                                        subir_fotografia_privada(
+                                            ruta_foto,
+                                            foto_procesada["bytes"]
+                                        )
+
+                                    registro_supabase = {
+                                        "region": input_region,
+                                        "comuna": input_comuna.strip().title(),
+                                        "nombre_comun": (
+                                            input_especie.strip().title()
+                                        ),
+                                        "nombre_cientifico": (
+                                            obtener_nombre_cientifico_resuelto(
+                                                input_especie.strip()
+                                            )
+                                        ),
+                                        "tipo_evento": "Aporte Comunitario",
+                                        "latitud": float(lat_final),
+                                        "longitud": float(lon_final),
+                                        "aportado_por": usr_actual,
+                                        "notas": input_notas.strip(),
+                                        "estado": "Pendiente de Revisión",
+                                        "foto_url": ruta_foto,
+                                        "consentimiento_id": consentimiento["id"],
+                                        "version_consentimiento": (
+                                            consentimiento[
+                                                "version_consentimiento"
+                                            ]
+                                        ),
+                                        "origen_registro": "Comunitario",
+                                        "estado_validacion": "Pendiente",
+                                        "nivel_visibilidad": (
+                                            "Privado durante revisión"
+                                        ),
+                                        "especie_sensible": False,
+                                        "foto_ruta": ruta_foto,
+                                        "foto_nombre_original": (
+                                            foto_procesada["nombre_original"]
+                                            if foto_procesada else None
+                                        ),
+                                        "foto_mime_original": (
+                                            foto_procesada["mime_original"]
+                                            if foto_procesada else None
+                                        ),
+                                        "foto_mime_final": (
+                                            foto_procesada["mime_final"]
+                                            if foto_procesada else None
+                                        ),
+                                        "foto_ancho_original": (
+                                            foto_procesada["ancho_original"]
+                                            if foto_procesada else None
+                                        ),
+                                        "foto_alto_original": (
+                                            foto_procesada["alto_original"]
+                                            if foto_procesada else None
+                                        ),
+                                        "foto_ancho_final": (
+                                            foto_procesada["ancho_final"]
+                                            if foto_procesada else None
+                                        ),
+                                        "foto_alto_final": (
+                                            foto_procesada["alto_final"]
+                                            if foto_procesada else None
+                                        ),
+                                        "foto_bytes_original": (
+                                            foto_procesada["bytes_original"]
+                                            if foto_procesada else None
+                                        ),
+                                        "foto_bytes_final": (
+                                            foto_procesada["bytes_final"]
+                                            if foto_procesada else None
+                                        ),
+                                        "foto_hash_sha256": (
+                                            foto_procesada["hash_sha256"]
+                                            if foto_procesada else None
+                                        )
+                                    }
+
                                     respuesta_supabase = (
                                         supabase
                                         .table("avistamientos")
@@ -1010,22 +1246,50 @@ def mostrar_aplicacion_principal():
                                     )
 
                                     if respuesta_supabase.data:
-                                        st.success(
-                                            "📝 ¡Avistamiento guardado "
-                                            "permanentemente y enviado "
-                                            "a revisión!"
-                                        )
+                                        if foto_procesada:
+                                            reduccion = 100 * (
+                                                1 - (
+                                                    foto_procesada[
+                                                        "bytes_final"
+                                                    ]
+                                                    / foto_procesada[
+                                                        "bytes_original"
+                                                    ]
+                                                )
+                                            )
+                                            st.success(
+                                                "📝 ¡Avistamiento y fotografía "
+                                                "guardados permanentemente y "
+                                                "enviados a revisión!"
+                                            )
+                                            st.caption(
+                                                "Imagen procesada: "
+                                                f"{foto_procesada['ancho_final']} × "
+                                                f"{foto_procesada['alto_final']} px, "
+                                                f"reducción aproximada de "
+                                                f"{max(reduccion, 0):.1f}%."
+                                            )
+                                        else:
+                                            st.success(
+                                                "📝 ¡Avistamiento guardado "
+                                                "permanentemente y enviado "
+                                                "a revisión!"
+                                            )
                                     else:
-                                        st.warning(
-                                            "Supabase recibió la solicitud, "
-                                            "pero no devolvió el registro "
-                                            "creado."
+                                        eliminar_fotografia_privada(ruta_foto)
+                                        st.error(
+                                            "Supabase no confirmó la creación "
+                                            "del avistamiento."
                                         )
 
                                 except Exception as error:
+                                    try:
+                                        eliminar_fotografia_privada(ruta_foto)
+                                    except Exception:
+                                        pass
                                     st.error(
-                                        "No fue posible guardar el "
-                                        f"avistamiento: {error}"
+                                        "No fue posible guardar el aporte: "
+                                        f"{error}"
                                     )
 
         if tab_perfil and st.session_state.tipo_acceso == "Registrado":
