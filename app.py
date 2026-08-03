@@ -752,50 +752,75 @@ def mostrar_aplicacion_principal():
                     btn_guardar = st.form_submit_button("📥 Enviar a Revisión", type="primary", use_container_width=True)
                     if btn_guardar:
                         if not input_especie.strip() or not input_comuna.strip():
-                            st.error("Por favor completa al menos la especie y la comuna.")
+                            st.error(
+                                "Por favor completa al menos la especie "
+                                "y la comuna."
+                            )
                         else:
                             lat_exif, lon_exif = None, None
+
                             if foto_avistamiento is not None:
-                                lat_exif, lon_exif = obtener_coordenadas_exif(foto_avistamiento)
-                            if lat_exif and lon_exif:
-                                lat_final, lon_final = lat_exif, lon_exif
+                                lat_exif, lon_exif = obtener_coordenadas_exif(
+                                    foto_avistamiento
+                                )
+
+                            if lat_exif is not None and lon_exif is not None:
+                                lat_final = lat_exif
+                                lon_final = lon_exif
                             else:
-                                lat_final = COORDENADAS_COMUNAS.get(input_comuna.strip().title(), COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[0]
-                                lon_final = COORDENADAS_COMUNAS.get(input_comuna.strip().title(), COORDENADAS_REGIONES.get(input_region, (-33.4489, -70.6693)))[1]
-                            
-                          registro_supabase = {
-    "region": input_region,
-    "comuna": input_comuna.strip().title(),
-    "nombre_comun": input_especie.strip().title(),
-    "nombre_cientifico": obtener_nombre_cientifico_resuelto(
-        input_especie.strip()
-    ),
-    "tipo_evento": "Aporte Comunitario",
-    "latitud": float(lat_final),
-    "longitud": float(lon_final),
-    "aportado_por": usr_actual,
-    "notas": input_notas.strip(),
-    "estado": "Pendiente de Revisión",
-    "foto_url": None
-}
+                                coordenadas_finales = COORDENADAS_COMUNAS.get(
+                                    input_comuna.strip().title(),
+                                    COORDENADAS_REGIONES.get(
+                                        input_region,
+                                        (-33.4489, -70.6693)
+                                    )
+                                )
+                                lat_final = coordenadas_finales[0]
+                                lon_final = coordenadas_finales[1]
 
-try:
-    respuesta_supabase = (
-        supabase
-        .table("avistamientos")
-        .insert(registro_supabase)
-        .execute()
-    )
+                            registro_supabase = {
+                                "region": input_region,
+                                "comuna": input_comuna.strip().title(),
+                                "nombre_comun": input_especie.strip().title(),
+                                "nombre_cientifico": (
+                                    obtener_nombre_cientifico_resuelto(
+                                        input_especie.strip()
+                                    )
+                                ),
+                                "tipo_evento": "Aporte Comunitario",
+                                "latitud": float(lat_final),
+                                "longitud": float(lon_final),
+                                "aportado_por": usr_actual,
+                                "notas": input_notas.strip(),
+                                "estado": "Pendiente de Revisión",
+                                "foto_url": None
+                            }
 
-    st.success(
-        "📝 ¡Avistamiento guardado permanentemente "
-        "y enviado a revisión!"
-    )
+                            try:
+                                respuesta_supabase = (
+                                    supabase
+                                    .table("avistamientos")
+                                    .insert(registro_supabase)
+                                    .execute()
+                                )
 
-except Exception as error:
-    st.error(
-        f"No fue posible guardar el avistamiento: {error}"
-    )
+                                if respuesta_supabase.data:
+                                    st.success(
+                                        "📝 ¡Avistamiento guardado "
+                                        "permanentemente y enviado a revisión!"
+                                    )
+                                else:
+                                    st.warning(
+                                        "Supabase recibió la solicitud, pero no "
+                                        "devolvió el registro creado."
+                                    )
+
+                            except Exception as error:
+                                st.error(
+                                    "No fue posible guardar el "
+                                    f"avistamiento: {error}"
+                                )
+
         if tab_perfil and st.session_state.tipo_acceso == "Registrado":
             with tab_perfil:
                 st.subheader("⚙️ Configuración y Personalización del Perfil")
