@@ -11,12 +11,13 @@ import gc
 
 gc.collect()
 
+icono_app = Image.open("favicon_512.png")
+
 st.set_page_config(
     page_title="BioExplora Chile",
-    page_icon="🌿",
+    page_icon=icono_app,
     layout="wide"
 )
-
 # --- ESTILOS CSS PERSONALIZADOS ---
 st.markdown("""
 <style>
