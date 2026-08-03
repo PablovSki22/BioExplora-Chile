@@ -623,6 +623,33 @@ def eliminar_fotografia_privada(ruta):
         supabase.storage.from_(BUCKET_FOTOS).remove([ruta])
 
 
+def crear_url_firmada_fotografia(ruta, duracion_segundos=900):
+    """Genera una URL temporal para visualizar una fotografía privada."""
+    if not ruta:
+        return None
+
+    try:
+        respuesta = (
+            supabase.storage
+            .from_(BUCKET_FOTOS)
+            .create_signed_url(ruta, duracion_segundos)
+        )
+
+        if isinstance(respuesta, str):
+            return respuesta
+
+        if isinstance(respuesta, dict):
+            return (
+                respuesta.get("signedURL")
+                or respuesta.get("signedUrl")
+                or respuesta.get("signed_url")
+            )
+
+        return getattr(respuesta, "signed_url", None)
+    except Exception:
+        return None
+
+
 VERSION_CONSENTIMIENTO = "BIOEXPLORA-CONSENTIMIENTO-2026-01"
 
 
@@ -1333,43 +1360,258 @@ def mostrar_aplicacion_principal():
                             st.rerun()
 
                 st.markdown("---")
-                st.markdown("### 📥 Bandeja de Revisión y Clasificación de Avistamientos")
-                mis_pendientes = st.session_state.df_pendientes_revision[
-                    (st.session_state.df_pendientes_revision['AportadoPor'] == usr_actual) & 
-                    (st.session_state.df_pendientes_revision['Estado'] == 'Pendiente de Revisión')
-                ]
-                if not mis_pendientes.empty:
-                    for idx, row in mis_pendientes.iterrows():
-                        with st.expander(f"🔍 Revisar: {row['NombreComun']} ({row['Comuna']})"):
-                            with st.form(f"form_revision_{idx}"):
-                                rev_especie = st.text_input("Especie:", value=row['NombreComun'], key=f"rev_esp_{idx}")
-                                rev_comuna = st.text_input("Comuna:", value=row['Comuna'], key=f"rev_com_{idx}")
+                st.markdown(
+                    "### 📥 Mis Aportes Pendientes y Clasificación Comunitaria"
+                )
+                st.caption(
+                    "Esta sección administra aportes comunitarios. Publicar "
+                    "un aporte no le otorga carácter oficial ni constituye "
+                    "validación institucional."
+                )
+
+                try:
+                    respuesta_pendientes = (
+                        supabase
+                        .table("avistamientos")
+                        .select(
+                            "id, fecha_creacion, region, comuna, "
+                            "nombre_comun, nombre_cientifico, tipo_evento, "
+                            "latitud, longitud, aportado_por, notas, estado, "
+                            "estado_validacion, nivel_visibilidad, "
+                            "especie_sensible, foto_ruta, foto_ancho_final, "
+                            "foto_alto_final, foto_bytes_final"
+                        )
+                        .eq("aportado_por", usr_actual)
+                        .eq("estado", "Pendiente de Revisión")
+                        .order("fecha_creacion", desc=True)
+                        .execute()
+                    )
+                    mis_pendientes = respuesta_pendientes.data or []
+                except Exception as error:
+                    mis_pendientes = []
+                    st.error(
+                        "No fue posible cargar los aportes pendientes: "
+                        f"{error}"
+                    )
+
+                if mis_pendientes:
+                    st.info(
+                        f"Tienes {len(mis_pendientes)} aporte(s) pendiente(s)."
+                    )
+
+                    for registro in mis_pendientes:
+                        registro_id = registro["id"]
+                        especie_actual = registro.get(
+                            "nombre_comun",
+                            "Especie no especificada"
+                        )
+                        comuna_actual = registro.get(
+                            "comuna",
+                            "Sin comuna"
+                        )
+
+                        with st.expander(
+                            f"🔍 Aporte #{registro_id}: "
+                            f"{especie_actual} ({comuna_actual})"
+                        ):
+                            col_foto, col_datos = st.columns([1, 2])
+
+                            with col_foto:
+                                foto_ruta = registro.get("foto_ruta")
+                                if foto_ruta:
+                                    url_firmada = (
+                                        crear_url_firmada_fotografia(
+                                            foto_ruta,
+                                            duracion_segundos=900
+                                        )
+                                    )
+                                    if url_firmada:
+                                        st.image(
+                                            url_firmada,
+                                            caption=(
+                                                "Fotografía privada. Enlace "
+                                                "temporal de 15 minutos."
+                                            ),
+                                            use_container_width=True
+                                        )
+                                    else:
+                                        st.warning(
+                                            "No fue posible generar la vista "
+                                            "temporal de la fotografía."
+                                        )
+                                else:
+                                    st.info("Este aporte no tiene fotografía.")
+
+                            with col_datos:
+                                st.markdown(
+                                    f"**Origen:** "
+                                    f"{registro.get('tipo_evento', 'Comunitario')}"
+                                )
+                                st.markdown(
+                                    f"**Región:** {registro.get('region', '')}"
+                                )
+                                st.markdown(
+                                    f"**Coordenadas privadas:** "
+                                    f"{registro.get('latitud')}, "
+                                    f"{registro.get('longitud')}"
+                                )
+                                st.markdown(
+                                    f"**Notas:** "
+                                    f"{registro.get('notas') or 'Sin notas'}"
+                                )
+
+                            with st.form(
+                                f"form_revision_supabase_{registro_id}"
+                            ):
+                                rev_especie = st.text_input(
+                                    "Especie:",
+                                    value=especie_actual,
+                                    key=f"rev_esp_{registro_id}"
+                                )
+                                rev_comuna = st.text_input(
+                                    "Comuna:",
+                                    value=comuna_actual,
+                                    key=f"rev_com_{registro_id}"
+                                )
+                                rev_sensible = st.checkbox(
+                                    "Marcar como especie sensible",
+                                    value=bool(
+                                        registro.get("especie_sensible", False)
+                                    ),
+                                    key=f"rev_sensible_{registro_id}"
+                                )
+
                                 c_btn1, c_btn2 = st.columns(2)
                                 with c_btn1:
-                                    btn_publicar = st.form_submit_button("🚀 Publicar Oficialmente", type="primary", use_container_width=True)
+                                    btn_publicar = st.form_submit_button(
+                                        "🚀 Publicar como aporte comunitario",
+                                        type="primary",
+                                        use_container_width=True
+                                    )
                                 with c_btn2:
-                                    btn_descartar = st.form_submit_button("🗑️ Descartar", use_container_width=True)
-                                
+                                    btn_descartar = st.form_submit_button(
+                                        "🗑️ Descartar",
+                                        use_container_width=True
+                                    )
+
                                 if btn_publicar:
+                                    especie_limpia = rev_especie.strip().title()
                                     comuna_limpia = rev_comuna.strip().title()
-                                    lat_f = COORDENADAS_COMUNAS.get(comuna_limpia, (row['Latitud'], row['Longitud']))[0]
-                                    lon_f = COORDENADAS_COMUNAS.get(comuna_limpia, (row['Latitud'], row['Longitud']))[1]
-                                    reg_oficial = pd.DataFrame([{
-                                        'Region': row['Region'], 'Comuna': comuna_limpia,
-                                        'NombreComun': rev_especie.strip().title(), 'TipoEvento': 'Aporte Comunitario',
-                                        'Latitud': lat_f, 'Longitud': lon_f, 'AportadoPor': usr_actual
-                                    }])
-                                    st.session_state.df_nuevos_registros = pd.concat([st.session_state.df_nuevos_registros, reg_oficial], ignore_index=True)
-                                    st.session_state.df_pendientes_revision.loc[idx, 'Estado'] = 'Publicado'
-                                    st.session_state.conteo_avistamientos[usr_actual] = st.session_state.conteo_avistamientos.get(usr_actual, 0) + 1
-                                    st.success("¡Registro validado y publicado!")
-                                    st.rerun()
+
+                                    if not especie_limpia or not comuna_limpia:
+                                        st.error(
+                                            "La especie y la comuna son "
+                                            "obligatorias."
+                                        )
+                                    else:
+                                        coordenadas = COORDENADAS_COMUNAS.get(
+                                            comuna_limpia,
+                                            (
+                                                registro.get("latitud"),
+                                                registro.get("longitud")
+                                            )
+                                        )
+
+                                        if rev_sensible:
+                                            visibilidad = (
+                                                "Restringido institucional"
+                                            )
+                                        else:
+                                            visibilidad = (
+                                                "Público con ubicación "
+                                                "aproximada"
+                                            )
+
+                                        actualizacion = {
+                                            "comuna": comuna_limpia,
+                                            "nombre_comun": especie_limpia,
+                                            "nombre_cientifico": (
+                                                obtener_nombre_cientifico_resuelto(
+                                                    especie_limpia
+                                                )
+                                            ),
+                                            "latitud": float(coordenadas[0]),
+                                            "longitud": float(coordenadas[1]),
+                                            "estado": "Publicado",
+                                            "estado_validacion": (
+                                                "Validado comunitario"
+                                            ),
+                                            "nivel_visibilidad": visibilidad,
+                                            "especie_sensible": rev_sensible,
+                                            "origen_registro": "Comunitario"
+                                        }
+
+                                        try:
+                                            respuesta_actualizacion = (
+                                                supabase
+                                                .table("avistamientos")
+                                                .update(actualizacion)
+                                                .eq("id", registro_id)
+                                                .eq(
+                                                    "aportado_por",
+                                                    usr_actual
+                                                )
+                                                .execute()
+                                            )
+
+                                            if respuesta_actualizacion.data:
+                                                st.success(
+                                                    "Aporte comunitario "
+                                                    "publicado correctamente."
+                                                )
+                                                st.rerun()
+                                            else:
+                                                st.error(
+                                                    "Supabase no confirmó la "
+                                                    "publicación del aporte."
+                                                )
+                                        except Exception as error:
+                                            st.error(
+                                                "No fue posible publicar el "
+                                                f"aporte: {error}"
+                                            )
+
                                 if btn_descartar:
-                                    st.session_state.df_pendientes_revision.loc[idx, 'Estado'] = 'Descartado'
-                                    st.warning("Registro descartado.")
-                                    st.rerun()
+                                    try:
+                                        respuesta_descarte = (
+                                            supabase
+                                            .table("avistamientos")
+                                            .update({
+                                                "estado": "Descartado",
+                                                "estado_validacion": (
+                                                    "Rechazado"
+                                                ),
+                                                "nivel_visibilidad": (
+                                                    "Privado durante revisión"
+                                                )
+                                            })
+                                            .eq("id", registro_id)
+                                            .eq("aportado_por", usr_actual)
+                                            .execute()
+                                        )
+
+                                        if respuesta_descarte.data:
+                                            st.warning(
+                                                "Aporte descartado. La "
+                                                "fotografía permanece privada "
+                                                "hasta aplicar la política de "
+                                                "retención y eliminación."
+                                            )
+                                            st.rerun()
+                                        else:
+                                            st.error(
+                                                "Supabase no confirmó el "
+                                                "descarte del aporte."
+                                            )
+                                    except Exception as error:
+                                        st.error(
+                                            "No fue posible descartar el "
+                                            f"aporte: {error}"
+                                        )
                 else:
-                    st.info("No tienes avistamientos pendientes de revisión.")
+                    st.info(
+                        "No tienes avistamientos pendientes de revisión."
+                    )
 
     except Exception as e:
         st.error(f"Error en la aplicación: {e}")
