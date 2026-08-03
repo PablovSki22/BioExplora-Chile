@@ -7,6 +7,7 @@ import requests
 import hashlib
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
+from supabase import create_client, Client
 import gc
 
 gc.collect()
