@@ -19,6 +19,33 @@ st.set_page_config(
     page_icon=icono_app,
     layout="wide"
 )
+# --- CONEXIÓN CON SUPABASE ---
+@st.cache_resource
+def obtener_cliente_supabase() -> Client:
+    try:
+        supabase_url = st.secrets["supabase"]["url"]
+        supabase_key = st.secrets["supabase"]["key"]
+
+        return create_client(
+            supabase_url,
+            supabase_key
+        )
+
+    except KeyError as error:
+        st.error(
+            f"Falta una configuración de Supabase "
+            f"en los Secrets privados: {error}"
+        )
+        st.stop()
+
+    except Exception as error:
+        st.error(
+            f"No fue posible conectar con Supabase: {error}"
+        )
+        st.stop()
+
+
+supabase = obtener_cliente_supabase()
 # --- ESTILOS CSS PERSONALIZADOS ---
 st.markdown("""
 <style>
