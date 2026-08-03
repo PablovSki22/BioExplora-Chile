@@ -371,13 +371,85 @@ def load_base_data():
 
     return df
 
+@st.cache_data(ttl=60, show_spinner=False)
+def cargar_aportes_comunitarios_publicos():
+    """Carga solo aportes comunitarios aptos para la vista pública."""
+    try:
+        respuesta = (
+            supabase
+            .table("avistamientos")
+            .select(
+                "id, region, comuna, nombre_comun, tipo_evento, "
+                "latitud_publica, longitud_publica, "
+                "precision_publica_metros, estado_validacion, "
+                "nivel_visibilidad, especie_sensible"
+            )
+            .eq("estado", "Publicado")
+            .eq("origen_registro", "Comunitario")
+            .eq("especie_sensible", False)
+            .not_.is_("latitud_publica", "null")
+            .not_.is_("longitud_publica", "null")
+            .execute()
+        )
+    except Exception:
+        return pd.DataFrame(
+            columns=[
+                "Region", "Comuna", "NombreComun", "TipoEvento",
+                "Latitud", "Longitud", "OrigenRegistro",
+                "EstadoValidacion", "NivelVisibilidad",
+                "PrecisionPublicaMetros"
+            ]
+        )
+
+    registros = respuesta.data or []
+    if not registros:
+        return pd.DataFrame(
+            columns=[
+                "Region", "Comuna", "NombreComun", "TipoEvento",
+                "Latitud", "Longitud", "OrigenRegistro",
+                "EstadoValidacion", "NivelVisibilidad",
+                "PrecisionPublicaMetros"
+            ]
+        )
+
+    df_comunitario = pd.DataFrame(registros).rename(columns={
+        "region": "Region",
+        "comuna": "Comuna",
+        "nombre_comun": "NombreComun",
+        "tipo_evento": "TipoEvento",
+        "latitud_publica": "Latitud",
+        "longitud_publica": "Longitud",
+        "estado_validacion": "EstadoValidacion",
+        "nivel_visibilidad": "NivelVisibilidad",
+        "precision_publica_metros": "PrecisionPublicaMetros"
+    })
+    df_comunitario["OrigenRegistro"] = "Comunitario"
+    return df_comunitario
+
+
 def get_complete_data():
-    base_df = load_base_data()
-    if not st.session_state.df_nuevos_registros.empty:
-        cols_base = ['Region', 'Comuna', 'NombreComun', 'TipoEvento', 'Latitud', 'Longitud']
-        df_clean_nuevos = st.session_state.df_nuevos_registros[cols_base]
-        return pd.concat([base_df, df_clean_nuevos], ignore_index=True)
-    return base_df
+    """Combina registros históricos oficiales y aportes públicos."""
+    base_df = load_base_data().copy()
+    base_df["OrigenRegistro"] = "Oficial"
+    base_df["EstadoValidacion"] = "Oficial"
+    base_df["NivelVisibilidad"] = "Público"
+    base_df["PrecisionPublicaMetros"] = None
+
+    df_comunitario = cargar_aportes_comunitarios_publicos()
+    if df_comunitario.empty:
+        return base_df
+
+    columnas = [
+        "Region", "Comuna", "NombreComun", "TipoEvento",
+        "Latitud", "Longitud", "OrigenRegistro",
+        "EstadoValidacion", "NivelVisibilidad",
+        "PrecisionPublicaMetros"
+    ]
+    return pd.concat(
+        [base_df[columnas], df_comunitario[columnas]],
+        ignore_index=True
+    )
+
 
 @st.cache_data(ttl=3600)
 def obtener_datos_gbif(nombre_especie):
@@ -414,31 +486,87 @@ def obtener_datos_gbif(nombre_especie):
     return taxonomia, imagen_url
 
 def crear_mapa_folium(df_puntos, lat_centro, lon_centro, zoom):
-    m = folium.Map(location=[lat_centro, lon_centro], zoom_start=zoom, tiles="CartoDB dark_matter")
-    folium.TileLayer('OpenStreetMap', name='OpenStreetMap').add_to(m)
-    folium.TileLayer('CartoDB positron', name='Claro Minimalista').add_to(m)
+    m = folium.Map(
+        location=[lat_centro, lon_centro],
+        zoom_start=zoom,
+        tiles="CartoDB dark_matter"
+    )
     folium.TileLayer(
-        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri',
-        name='Satelital / Geográfico'
+        "OpenStreetMap",
+        name="OpenStreetMap"
+    ).add_to(m)
+    folium.TileLayer(
+        "CartoDB positron",
+        name="Claro Minimalista"
+    ).add_to(m)
+    folium.TileLayer(
+        tiles=(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/"
+            "World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        ),
+        attr="Esri",
+        name="Satelital / Geográfico"
     ).add_to(m)
 
+    capa_oficial = folium.FeatureGroup(
+        name="Registros oficiales",
+        show=True
+    )
+    capa_comunitaria = folium.FeatureGroup(
+        name="Aportes comunitarios publicados",
+        show=True
+    )
+
     for _, row in df_puntos.iterrows():
-        color_marker = "green" if row.get("TipoEvento") == "Monitoreo" else ("purple" if row.get("TipoEvento") == "Aporte Comunitario" else "orange")
-        popup_txt = f"<b>Especie:</b> {row['NombreComun']}<br><b>Región:</b> {row['Region']}<br><b>Comuna:</b> {row['Comuna']}<br><b>Tipo:</b> {row['TipoEvento']}"
+        es_comunitario = row.get("OrigenRegistro") == "Comunitario"
+
+        if es_comunitario:
+            color_marker = "purple"
+            etiqueta_origen = "Aporte comunitario publicado"
+            precision = row.get("PrecisionPublicaMetros")
+            precision_txt = (
+                f"Aproximadamente {int(precision):,} metros"
+                if pd.notnull(precision)
+                else "Ubicación generalizada"
+            )
+            destino = capa_comunitaria
+        else:
+            color_marker = (
+                "green"
+                if row.get("TipoEvento") == "Monitoreo"
+                else "orange"
+            )
+            etiqueta_origen = "Registro oficial"
+            precision_txt = "Según fuente histórica"
+            destino = capa_oficial
+
+        popup_txt = (
+            f"<b>Especie:</b> {row['NombreComun']}<br>"
+            f"<b>Región:</b> {row['Region']}<br>"
+            f"<b>Comuna:</b> {row['Comuna']}<br>"
+            f"<b>Categoría:</b> {etiqueta_origen}<br>"
+            f"<b>Precisión pública:</b> {precision_txt}"
+        )
+
         folium.CircleMarker(
-            location=[row['Latitud'], row['Longitud']],
-            radius=7,
-            popup=folium.Popup(popup_txt, max_width=300),
-            tooltip=f"{row['NombreComun']} - {row['Comuna']}",
+            location=[row["Latitud"], row["Longitud"]],
+            radius=8 if es_comunitario else 7,
+            popup=folium.Popup(popup_txt, max_width=320),
+            tooltip=(
+                f"{row['NombreComun']} - {etiqueta_origen}"
+            ),
             color=color_marker,
             fill=True,
             fill_color=color_marker,
-            fill_opacity=0.85
-        ).add_to(m)
+            fill_opacity=0.9 if es_comunitario else 0.85,
+            weight=2
+        ).add_to(destino)
 
-    folium.LayerControl(position='topright').add_to(m)
+    capa_oficial.add_to(m)
+    capa_comunitaria.add_to(m)
+    folium.LayerControl(position="topright").add_to(m)
     return m
+
 
 def crear_mapa_contraste_especie(df_completo, df_especie):
     lat_c = df_especie['Latitud'].mean() if not df_especie.empty else -33.4489
@@ -940,43 +1068,120 @@ def mostrar_aplicacion_principal():
 
         with tab1:
             st.subheader("Filtros del Mapa")
-            c_reg, c_est = st.columns(2)
+            c_reg, c_est, c_origen = st.columns(3)
+
             with c_reg:
-                regiones = ["Todas"] + sorted([r for r in df['Region'].unique() if r not in ['Sin Información']])
-                selected_region = st.selectbox("Seleccione Región:", regiones)
+                regiones = ["Todas"] + sorted([
+                    r for r in df["Region"].unique()
+                    if r not in ["Sin Información"]
+                ])
+                selected_region = st.selectbox(
+                    "Seleccione Región:",
+                    regiones
+                )
+
             with c_est:
                 filtro_identificacion = st.radio(
                     "Estado de Identificación:",
                     ["Todas", "Solo Identificadas", "No Identificadas"],
                     horizontal=True
                 )
-            
-            df_map = df.dropna(subset=['Latitud', 'Longitud'])
+
+            with c_origen:
+                filtro_origen = st.selectbox(
+                    "Origen del registro:",
+                    ["Todos", "Oficial", "Comunitario"]
+                )
+
+            df_map = df.dropna(subset=["Latitud", "Longitud"])
+
             if selected_region != "Todas":
-                df_map = df_map[df_map['Region'] == selected_region]
+                df_map = df_map[df_map["Region"] == selected_region]
+
             if filtro_identificacion == "Solo Identificadas":
-                df_map = df_map[df_map['NombreComun'] != 'Especie No Especificada']
+                df_map = df_map[
+                    df_map["NombreComun"] != "Especie No Especificada"
+                ]
             elif filtro_identificacion == "No Identificadas":
-                df_map = df_map[df_map['NombreComun'] == 'Especie No Especificada']
-                
-            st.info(f"Registros georreferenciados en vista: {len(df_map):,}")
-            
+                df_map = df_map[
+                    df_map["NombreComun"] == "Especie No Especificada"
+                ]
+
+            if filtro_origen != "Todos":
+                df_map = df_map[
+                    df_map["OrigenRegistro"] == filtro_origen
+                ]
+
+            oficiales_vista = int(
+                (df_map["OrigenRegistro"] == "Oficial").sum()
+            )
+            comunitarios_vista = int(
+                (df_map["OrigenRegistro"] == "Comunitario").sum()
+            )
+
+            col_m1, col_m2, col_m3 = st.columns(3)
+            col_m1.metric("Registros visibles", f"{len(df_map):,}")
+            col_m2.metric("Oficiales", f"{oficiales_vista:,}")
+            col_m3.metric(
+                "Comunitarios publicados",
+                f"{comunitarios_vista:,}"
+            )
+
+            st.caption(
+                "🟢/🟠 Registros oficiales según su fuente histórica. "
+                "🟣 Aportes comunitarios publicados con ubicación "
+                "generalizada. Las especies sensibles no se muestran en "
+                "el mapa público."
+            )
+
             if len(df_map) > 0:
-                lat_center = df_map['Latitud'].mean()
-                lon_center = df_map['Longitud'].mean()
+                lat_center = df_map["Latitud"].mean()
+                lon_center = df_map["Longitud"].mean()
                 zoom_level = 4 if selected_region == "Todas" else 7
-                mapa = crear_mapa_folium(df_map, lat_center, lon_center, zoom_level)
-                st_folium(mapa, use_container_width=True, height=600, returned_objects=[])
+                mapa = crear_mapa_folium(
+                    df_map,
+                    lat_center,
+                    lon_center,
+                    zoom_level
+                )
+                st_folium(
+                    mapa,
+                    use_container_width=True,
+                    height=600,
+                    returned_objects=[]
+                )
             else:
-                st.warning("No hay registros que coincidan con los filtros seleccionados.")
-                
+                st.warning(
+                    "No hay registros que coincidan con los filtros "
+                    "seleccionados."
+                )
+
         with tab2:
             st.subheader("Métricas Generales")
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total Registros", f"{len(df):,}")
-            col2.metric("Especies Distintas", f"{df[df['NombreComun'] != 'Especie No Especificada']['NombreComun'].nunique():,}")
-            col3.metric("Comunas Cubiertas", f"{df['Comuna'].nunique():,}")
-            
+            total_oficiales = int(
+                (df["OrigenRegistro"] == "Oficial").sum()
+            )
+            total_comunitarios = int(
+                (df["OrigenRegistro"] == "Comunitario").sum()
+            )
+
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Registros oficiales", f"{total_oficiales:,}")
+            col2.metric(
+                "Aportes comunitarios publicados",
+                f"{total_comunitarios:,}"
+            )
+            col3.metric("Total visible", f"{len(df):,}")
+            col4.metric(
+                "Especies distintas",
+                f"{df[df['NombreComun'] != 'Especie No Especificada']['NombreComun'].nunique():,}"
+            )
+
+            st.caption(
+                "Las métricas comunitarias incluyen solo aportes publicados "
+                "y aptos para la vista pública. Los registros sensibles o "
+                "restringidos no se contabilizan aquí."
+            )
             st.markdown("---")
             c1, c2 = st.columns(2)
             with c1:
@@ -1516,11 +1721,23 @@ def mostrar_aplicacion_principal():
                                             visibilidad = (
                                                 "Restringido institucional"
                                             )
+                                            latitud_publica = None
+                                            longitud_publica = None
+                                            precision_publica = None
                                         else:
                                             visibilidad = (
                                                 "Público con ubicación "
                                                 "aproximada"
                                             )
+                                            latitud_publica = round(
+                                                float(coordenadas[0]),
+                                                2
+                                            )
+                                            longitud_publica = round(
+                                                float(coordenadas[1]),
+                                                2
+                                            )
+                                            precision_publica = 1500
 
                                         actualizacion = {
                                             "comuna": comuna_limpia,
@@ -1538,7 +1755,12 @@ def mostrar_aplicacion_principal():
                                             ),
                                             "nivel_visibilidad": visibilidad,
                                             "especie_sensible": rev_sensible,
-                                            "origen_registro": "Comunitario"
+                                            "origen_registro": "Comunitario",
+                                            "latitud_publica": latitud_publica,
+                                            "longitud_publica": longitud_publica,
+                                            "precision_publica_metros": (
+                                                precision_publica
+                                            )
                                         }
 
                                         try:
@@ -1555,6 +1777,7 @@ def mostrar_aplicacion_principal():
                                             )
 
                                             if respuesta_actualizacion.data:
+                                                cargar_aportes_comunitarios_publicos.clear()
                                                 st.success(
                                                     "Aporte comunitario "
                                                     "publicado correctamente."
