@@ -1,15 +1,31 @@
 {
-  "short_name": "BioExplora",
+  "id": "./",
   "name": "BioExplora Chile",
+  "short_name": "BioExplora",
+  "description": "Portal de monitoreo y exploración de la biodiversidad silvestre de Chile.",
+  "lang": "es-CL",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
+  "orientation": "any",
+  "background_color": "#0b132b",
+  "theme_color": "#0b132b",
   "icons": [
     {
-      "src": "favicon_512.png",
+      "src": "./favicon_192.png",
+      "sizes": "192x192",
       "type": "image/png",
-      "sizes": "512x512"
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./favicon_512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
-  ],
-  "start_url": "./index.html",
-  "display": "standalone",
-  "background_color": "#0b132b",
-  "theme_color": "#0b132b"
+  ]
 }
