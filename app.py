@@ -46,6 +46,24 @@ def obtener_cliente_supabase() -> Client:
 
 
 supabase = obtener_cliente_supabase()
+# --- VERIFICACIÓN DE CONEXIÓN CON SUPABASE ---
+try:
+    prueba_supabase = (
+        supabase
+        .table("avistamientos")
+        .select("id")
+        .limit(1)
+        .execute()
+    )
+
+    conexion_supabase_activa = True
+
+except Exception as error:
+    conexion_supabase_activa = False
+    st.error(
+        f"No fue posible consultar la tabla de avistamientos: {error}"
+    )
+    st.stop()
 # --- ESTILOS CSS PERSONALIZADOS ---
 st.markdown("""
 <style>
